@@ -1,0 +1,175 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+# Technical Requirements Document (TRD)
+
+## 1. Executive Technical Summary
+
+- **프로젝트 개요**  
+  AMR QC 솔루션은 Windows 환경에서 `.exe` 한 번 실행으로 Electron 셸이 Node.js 서버와 WebView(Next.js 정적 빌드)를 자동 기동하여 스마트폰 센서 스트리밍 데이터를 로컬에 저장·시각화하는 경량 통합 수집 시스템입니다. WebSocket과 REST API를 통해 데이터를 처리하며, SQLite에 시계열·메타 데이터를 기록합니다.
+
+- **핵심 기술 스택**  
+  Electron, Node.js(Express, ws), better-sqlite3, Next.js, Chart.js, Windows 10/11 64-bit
+
+- **주요 기술 목표**  
+  • 실시간 센서 패킷 유실률 < 2%  
+  • REST 평균 응답 시간 < 200 ms  
+  • 타임라인 뷰 렌더링 지연 < 200 ms  
+  • 동시 5 대 스트림 시 CPU ≤ 40%, 메모리 ≤ 500 MB
+
+- **주요 가정**  
+  • 대상 OS는 Windows 10/11 64-bit  
+  • Node.js LTS 버전 고정  
+  • 스마트폰 앱은 표준 JSON 포맷으로 WebSocket/REST 호출  
+  • 최대 동시 5 대 센서 스트림
+
+## 2. Tech Stack
+
+| Category              | Technology / Library    | Reasoning (선택 이유)                       |
+| --------------------- | ----------------------- | ------------------------------------------- |
+| Desktop Shell         | Electron                | `.exe` 자동 실행, Node.js 서버·WebView 통합 |
+| Backend Runtime       | Node.js (LTS)           | 풍부한 생태계, 경량 서버 구현, 배포 용이    |
+| Web Framework         | Next.js (export static) | 정적 빌드 WebView 로딩, SEO·빌드 속도 우수  |
+| Real-time 통신        | ws                      | 경량 WebSocket 구현, 실시간 패킷 수신       |
+| REST API              | Express                 | 간단한 라우팅·미들웨어 구조, 빠른 개발      |
+| Database              | better-sqlite3          | 동기식 쿼리, 낮은 오버헤드, 파일 기반 관리  |
+| Visualization         | Chart.js                | 타임라인 그래프·확대·축소 기능 지원         |
+| Packaging & Installer | electron-builder        | Windows Installer(.exe) 자동 생성           |
+| 유틸리티              | winston                 | 로깅·모니터링                               |
+
+## 3. System Architecture Design
+
+### Top-Level Building Blocks
+
+- Electron Shell  
+  • Node.js 서버 실행  
+  • WebView(Next.js) 로드
+- Node.js Server  
+  • Express 기반 REST API (`/data`, `/data/download`)  
+  • ws 기반 WebSocket 서버  
+  • SQLite(`data.db`) 연결 및 쿼리
+- Web Client (Next.js Static)  
+  • 타임라인 뷰(리스트·그래프 모드)  
+  • 시계열 데이터 다운로드 기능
+- Smartphone Client  
+  • WebSocket 센서 데이터 스트리밍  
+  • REST 데이터 조회
+
+### Top-Level Component Interaction Diagram
+
+```mermaid
+graph LR
+  Mobile[스마트폰 앱] -->|WebSocket/REST| Server[Node.js 서버]
+  Electron[Electron Shell]
+  Electron --> Server
+  Electron --> WebView[WebView (Next.js)]
+  Server --> DB[SQLite 데이터베이스]
+```
+
+- 스마트폰 앱이 WebSocket/REST로 Node.js 서버와 통신
+- Electron Shell이 서버와 WebView를 동시에 기동
+- 서버는 SQLite에 데이터를 저장
+- WebView는 REST/WebSocket으로 서버 데이터를 조회·시각화
+
+### Code Organization & Convention
+
+**Domain-Driven Organization Strategy**
+
+- **빠른 구현 우선**: MVP 단계에서는 빠른 개발을 위해 기능별 모듈(`routes/sensor.js`) 중심으로 구현합니다.
+- **공통 컴포넌트**: 재사용 가능한 모듈은 `shared/`에 분리합니다.
+
+**Universal File & Folder Structure**
+
+```
+/
+├── app/                      # Electron main process
+│   ├── main.js
+│   └── preload.js
+├── server/                   # Node.js 서버
+│   ├── routes/               # 기능별 API 라우트
+│   ├── services/             # (선택) 초기에는 라우트 파일에 로직 통합 가능
+│   ├── db.js                 # 데이터베이스 설정 및 연결
+│   └── index.js
+├── client/                   # Next.js 정적 클라이언트
+│   ├── pages/
+│   ├── components/
+│   ├── public/
+│   └── next.config.js
+├── shared/                   # 공통 모듈
+│   ├── utils/
+│   └── types/
+├── data.db                   # SQLite 데이터베이스
+├── package.json
+└── installer/                # electron-builder 설정
+```
+
+### Data Flow & Communication Patterns
+
+- **Client-Server Communication**:  
+  • WebSocket: sensor streaming (이벤트 기반)  
+  • REST: 메타조회(`/data`), 데이터 다운로드(`/data/download`)
+- **Database Interaction**:  
+  • better-sqlite3 동기식 트랜잭션, prepared statements
+- **외부 서비스 통합**: 없음 (로컬 전용)
+- **실시간 통신**: ws 라이브러리, ping/pong 체크
+- **데이터 동기화**:  
+  • WebSocket 메시지 → in-memory 버퍼 → SQLite 기록  
+  • 업로드 완료 후 메타 DB 업데이트
+
+## 4. Performance & Optimization Strategy
+
+- better-sqlite3 prepared statement 사용으로 DB쓰기 최적화
+- Chart.js requestAnimationFrame 기반 렌더링
+- WebSocket 메시지 배치 처리(batch insert)
+- 정적 자원(WebView) 캐싱, lazy loading는 지금 당장 도입하기보다 백업플랜으로 준비
+
+## 5. Implementation Roadmap & Milestones
+
+### Phase 1: Foundation (MVP Implementation)
+
+- **Core Infrastructure**: Electron + Node.js 기본 프로젝트 구조
+- **Essential Features**: WebSocket 서버, REST API(조회, 다운로드), SQLite 스키마
+- **Basic Security**: (현재 범위에서는 특별한 보안 요건 없음)
+- **Development Setup**: 개발 환경·CI 설정(GitHub Actions)
+- **Timeline**: 4주
+
+### Phase 2: Feature Enhancement
+
+- **Advanced Features**: 타임라인 뷰(그래프 확대/축소), QR 코드 URL 제공
+- **Performance Optimization**: 동시 5 스트림 부하 테스트, 리소스 튜닝
+
+- **Monitoring Implementation**: winston 기반 로깅, 간단 대시보드
+- **Timeline**: 6주
+
+### Phase 3: Scaling & Optimization
+
+- **Scalability Implementation**: 플러그인 아키텍처 모듈화
+- **Advanced Integrations**: AI 이상 탐지 플러그인 기본 구조
+- **Enterprise Features**: 로컬 감사 로그, 권한 관리
+- **Compliance & Auditing**: 보안 감사 보고서, 자동화 테스트
+- **Timeline**: 8주
+
+## 6. Risk Assessment & Mitigation Strategies
+
+### Technical Risk Analysis
+
+- **Technology Risks**: Node.js 이벤트 루프 병목 → 메시지 배치 처리로 완화
+- **Performance Risks**: SQLite 동시 쓰기 충돌 → 트랜잭션·Lock 최소화
+- **Integration Risks**: 스마트폰 OS별 포맷 불일치 → 표준 JSON 스펙 제공
+
+### Project Delivery Risks
+
+- **Timeline Risks**: Electron·Next.js 숙련도 부족 → 초기 PoC로 기술 검증
+- **Resource Risks**: 인력 이탈 시 개발 공백 → 지식 공유를 위해 문서화
+- **Quality Risks**: 테스트 커버리지 부족 → **핵심 기능 E2E 테스트 우선 확보**, 점진적 커버리지 확대
+- **Deployment Risks**: Windows 버전 호환성 → 10/11 자동 테스트 환경 구성
+- **Contingency Plans**:  
+  • 수동 설치 가이드 제공
+  • 점진적 고도화: `services`, `repositories` 등 상세 레이어 분리는 Phase 2에서 코드 복잡성이 증가할 때 점진적으로 리팩토링합니다.
+
+---
+
+_상기 TRD는 PRD 요건을 기반으로 최소화된 기술 스택과 도메인 구분 전략을 적용하여 오버엔지니어링을 방지하며, 빠른 출시와 장기 유지보수를 동시에 고려한 설계안입니다._
+

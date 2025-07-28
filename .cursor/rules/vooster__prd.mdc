@@ -1,0 +1,122 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+# Product Requirements Document
+
+## 1. Executive Summary
+
+AMR QC 솔루션은 스마트폰에서 발생하는 실시간 센서 스트리밍 데이터를 로컬 서버에 저장하고, 웹 클라이언트(WebView)에서 타임라인 형태로 시각화·조회할 수 있는 경량 통합 수집 시스템이다. 사용자는 `.exe` 파일 한 번 실행만으로 서버와 웹 클라이언트를 자동 기동하며, 스마트폰은 서버 주소를 입력해 즉시 연동된다. 본 솔루션은 복잡한 설정 없이 빠른 데이터 수집·모니터링 환경을 제공해 연구·품질관리 효율을 대폭 향상시킨다.
+
+## 2. Problem Statement
+
+- 스마트폰 센서 시계열 데이터를 손쉽게 수집·보관·시각화할 수 있는 경량 로컬 솔루션이 부재
+- 클라우드 의존 없이 오프라인 환경에서도 데이터 분석이 필요
+- 연구원·QA 담당자는 데이터 누락·동기화 오류로 품질관리 비용 증가
+
+## 3. Goals and Objectives
+
+- Primary Goal: 실시간 스마트폰 센서 데이터를 원클릭 로컬 서버에 저장·시각화
+- Secondary Goals:
+  - 오프라인 환경 완전 지원
+  - 설치·설정 5 분 이내 완료
+  - 데이터 시각화 초당 30 fps 수준의 부드러운 타임라인 제공
+- Success Metrics:
+  - 최초 실행~수집 개시까지 평균 2 분 이하
+  - 일간 활성 사용자(DAU) 90% 이상 재사용
+  - 데이터 수집 누락률 < 0.5%
+  - 평균 응답 시간 < 200 ms (REST)
+
+## 4. Target Audience
+
+### Primary Users
+
+- 연구소·품질관리(QC) 엔지니어
+  - 센서 데이터 수집 필요
+  - 로컬 보안 정책으로 클라우드 사용 제한
+- 대학·기업 연구원
+  - 프로토타입 실험 데이터 신속 확보
+  - 코드·서버 운용 경험이 부족
+
+### Secondary Users
+
+- 고객사: AMR제조업체
+- 프로젝트 대표: 본 개발 프로젝트 일정 관리, 프로젝트 퀄리티 관리
+- 프로젝트 매니저: 본 개발 프로젝트 일정 관리
+
+## 5. User Stories
+
+- `.exe`를 실행해 모든 서비스가 자동 시작되길 원한다.
+- QC 엔지니어로서 서버와 클라이언트웹뷰가 실행되면 가장 먼저 스마트폰에서 해당 서버에 접속하기 위해 URL을 QR형태로 제공해야 한다. 그 후에 테스트하고자 하는 AMR에 붙어있는 QR코드로 해당 디바이스의 ID를 식별하고, 해당 디바이스ID에서 들어오는 데이터들을 보여주기 위한 클라이언트 웹뷰 탭에서 해당 디바이스에 대한 데이터를 실시간 모니터링, 사후 조회하고 싶다.
+- 연구원으로서 수집된 데이터를 타임라인 그래프로 확인하고 싶다. 그래야 이상치를 즉시 발견할 수 있다.
+- 관리자로서 업로드된 센서데이터를 그대로 다운로드하고 싶다. 그래야 재가공·재학습에 활용할 수 있다.
+
+## 6. Functional Requirements
+
+### Core Features
+
+1. 서버 애플리케이션
+   - `.exe` 실행 시 Node.js 서버 및 브라우저 WebView 자동 기동
+   - WebSocket 서버: 스마트폰에서 전송된 센서 패킷 실시간 수신
+   - REST API:
+     - `GET /data`: 센서 메타 조회
+     - `GET /data/download`: 지정된 기간의 센서 데이터를 파일(CSV 등)로 다운로드
+   - 데이터 저장: SQLite `data.db`에 시계열·메타 데이터 기록
+   - IP 표시: 콘솔에 `http://<local_ip>:8000` 자동 출력
+   - Acceptance Criteria:
+     - `.exe` 실행 후 10 초 이내 서버 Listening
+     - 패킷 유실률 0.5% 이하
+2. 웹 클라이언트
+   - Next.js export 정적 빌드, WebView 로드
+   - 타임라인 뷰:
+     - 리스트 모드: 기록별 타임스탬프·센서값 요약
+
+- 그래프 모드: 시계열 그래프, 확대/축소·구간 선택
+- 디바이스별 타임라인: 각 AMR 장비(deviceId)별로 분리된 타임라인 뷰 제공, 디바이스 선택 및 전환 기능 포함
+  - 데이터 다운로드: 조회 중인 타임라인의 센서 데이터를 파일로 다운로드하는 버튼 제공
+  - REST 연동: 실시간 요청/응답 로딩 표시
+  - Acceptance Criteria:
+    - 그래프 렌더링 지연 < 200 ms
+
+## 7. Non-Functional Requirements
+
+- 성능: 동시 5 대 스마트폰 스트림 시 CPU 40% 이하, 메모리 500 MB 이하
+- 보안: 로컬 네트워크 내 접근, CSRF·XSS 방어
+- 사용성: 2 단계 이하 메뉴 구조, 키보드·마우스 모두 지원
+- 확장성: 플러그인 형태로 추가 센서 타입 모듈화
+- 호환성: Windows 10/11 64-bit, Chrome 최신
+
+## 8. Technical Considerations
+
+- Architecture: Electron Shell + Node.js 서버, Next.js 정적 파일 포함 단일 패키지
+- Integration: 스마트폰 앱(별도)에서 WebSocket/REST 호출
+- Data Model:
+  - SensorTable(id, deviceId, ts, sensorType, valueJson)
+- Dependencies: `ws`, `express`, `better-sqlite3`, `chart.js`
+- 배포: 단일 설치파일 생성
+
+## 9. Success Metrics and KPIs
+
+- 추가 작업 없이 최대한 빠르게 MVP 완성
+
+## 10. Timeline and Milestones
+
+- Task 1: 전체 구조 설정, DB 설계
+- Task 2–3: WebSocket 센서 수신 구현
+- Task 4: Next.js 웹뷰 구현 및 타임라인 렌더링
+- Task 5: 센서 데이터 다운로드 기능 구현 (API 및 클라이언트 버튼)
+- Task 6: .exe 패키징, 자동 실행 테스트
+- Task 7: 전체 통합 테스트, 문서화
+- Task 8: 스마트폰 샘플앱 연결 테스트
+- Task 9: 마무리 및 고객 전달용 패키징
+
+## 11. Risks and Mitigation
+
+- 오프라인 환경 장애 시 지원 지연 → 로컬 로그 제공
+- 기술 의존성(Node.js 버전) → LTS 버전 고정, 자동 업데이트 테스트
+
+## 12. Future Considerations
+
+- AI 기반 이상 탐지 플러그인 (on-premise LLM)(선택)
+
