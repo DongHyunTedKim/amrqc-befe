@@ -4,4 +4,4 @@
 
 export * from "./base";
 export * from "./sensor";
-export * from "./device";
+export * from "./smartphone";

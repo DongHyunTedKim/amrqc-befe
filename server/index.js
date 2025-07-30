@@ -1,7 +1,10 @@
 const os = require("os");
 const winston = require("winston");
+const express = require("express");
+const cors = require("cors");
 const DatabaseManager = require("./db");
 const WebSocketServer = require("./websocketServer");
+const serverInfoRoutes = require("./routes/serverInfo");
 
 // 로거 설정
 const logger = winston.createLogger({
@@ -28,6 +31,7 @@ const logger = winston.createLogger({
 /**
  * AMR QC 솔루션 서버
  * - WebSocket 서버 (포트 8001)
+ * - REST API 서버 (포트 8000)
  * - SQLite 데이터베이스 (data.db)
  * - 센서 데이터 실시간 수집 및 저장
  */
@@ -35,6 +39,7 @@ class AMRQCServer {
   constructor(options = {}) {
     this.config = {
       wsPort: options.wsPort || 8001,
+      httpPort: options.httpPort || 8000,
       dbPath: options.dbPath || "./data.db",
       queue: {
         maxBatchSize: options.maxBatchSize || 1000,
@@ -44,6 +49,8 @@ class AMRQCServer {
 
     this.db = null;
     this.wsServer = null;
+    this.httpServer = null;
+    this.app = null;
     this.startTime = Date.now();
   }
 
@@ -55,6 +62,27 @@ class AMRQCServer {
       // 데이터베이스 초기화
       logger.info("📀 Initializing database...");
       this.db = new DatabaseManager(this.config.dbPath);
+
+      // Express 앱 초기화
+      logger.info("🌐 Starting Express server...");
+      this.app = express();
+
+      // Express 미들웨어 설정
+      this.app.use(cors());
+      this.app.use(express.json());
+
+      // 서버 인스턴스를 app.locals에 저장
+      this.app.locals.amrServer = this;
+
+      // API 라우트 설정
+      this.app.use("/api/server", serverInfoRoutes);
+
+      // Express 서버 시작
+      this.httpServer = this.app.listen(this.config.httpPort, () => {
+        logger.info(
+          `✅ Express server listening on port ${this.config.httpPort}`
+        );
+      });
 
       // WebSocket 서버 시작
       logger.info("🌐 Starting WebSocket server...");
@@ -91,11 +119,15 @@ class AMRQCServer {
 
     logger.info("🔗 Server Connection URLs:");
     localIPs.forEach((ip) => {
+      logger.info(`   HTTP API: http://${ip}:${this.config.httpPort}`);
       logger.info(`   WebSocket: ws://${ip}:${this.config.wsPort}`);
     });
 
     if (localIPs.length === 0) {
       logger.warn("⚠️  No external network interfaces found");
+      logger.info(
+        `   Local HTTP API: http://localhost:${this.config.httpPort}`
+      );
       logger.info(`   Local WebSocket: ws://localhost:${this.config.wsPort}`);
     }
   }
@@ -130,6 +162,14 @@ class AMRQCServer {
     logger.info("🛑 Shutting down AMR QC Server...");
 
     try {
+      // Express 서버 종료
+      if (this.httpServer) {
+        await new Promise((resolve) => {
+          this.httpServer.close(resolve);
+        });
+        logger.info("✅ Express server stopped");
+      }
+
       // WebSocket 서버 종료
       if (this.wsServer) {
         this.wsServer.shutdown();
@@ -170,6 +210,7 @@ class AMRQCServer {
 if (require.main === module) {
   const server = new AMRQCServer({
     wsPort: process.env.WS_PORT || 8001,
+    httpPort: process.env.HTTP_PORT || 8000,
     dbPath: process.env.DB_PATH || "./data.db",
     maxBatchSize: parseInt(process.env.MAX_BATCH_SIZE) || 1000,
     flushInterval: parseInt(process.env.FLUSH_INTERVAL) || 5000,

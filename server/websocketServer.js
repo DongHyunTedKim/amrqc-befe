@@ -337,6 +337,23 @@ class WebSocketServer {
     });
   }
 
+  // 연결된 디바이스 목록 조회
+  getConnectedDevices() {
+    return Array.from(this.clients.values())
+      .filter((client) => client.deviceId) // deviceId가 설정된 클라이언트만
+      .map((client) => ({
+        id: client.id,
+        deviceId: client.deviceId,
+        connectedAt: client.connectedAt,
+        messageCount: client.messageCount,
+        lastActivity: client.lastPong,
+        status:
+          client.ws.readyState === WebSocket.OPEN
+            ? "connected"
+            : "disconnected",
+      }));
+  }
+
   // 서버 종료
   shutdown() {
     logger.info("WebSocket server shutting down...");
