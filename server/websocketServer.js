@@ -201,6 +201,9 @@ class WebSocketServer {
           timestamp: Date.now(),
           success: true,
         });
+
+        // 다른 클라이언트들에게 센서 데이터 브로드캐스트
+        this.broadcastSensorData(sensorData, client.id);
       } else {
         this.stats.messagesFailed++;
 
@@ -352,6 +355,29 @@ class WebSocketServer {
             ? "connected"
             : "disconnected",
       }));
+  }
+
+  // 센서 데이터 브로드캐스트
+  broadcastSensorData(sensorData, excludeClientId = null) {
+    const message = {
+      type: "sensor_data",
+      data: sensorData,
+      timestamp: Date.now(),
+    };
+
+    // 센서 데이터를 전송한 클라이언트를 제외한 모든 클라이언트에게 브로드캐스트
+    this.clients.forEach((client, clientId) => {
+      if (
+        clientId !== excludeClientId &&
+        client.ws.readyState === WebSocket.OPEN
+      ) {
+        this.sendMessage(client.ws, message);
+      }
+    });
+
+    logger.info(
+      `Broadcasted sensor data: ${sensorData.sensorType} from ${sensorData.deviceId}`
+    );
   }
 
   // 서버 종료

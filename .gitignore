@@ -42,3 +42,16 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# AMR QC 서버 관련 파일들
+# 로그 파일들
+*.log
+server*.log
+server.log*
+
+# 데이터베이스 파일들  
+data.db
+data.db-*
+*.db
+*.db-shm
+*.db-wal

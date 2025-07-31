@@ -5,6 +5,8 @@ const cors = require("cors");
 const DatabaseManager = require("./db");
 const WebSocketServer = require("./websocketServer");
 const serverInfoRoutes = require("./routes/serverInfo");
+const sensorDataRoutes = require("./routes/sensorData");
+const mockDataRoutes = require("./routes/mockData");
 
 // 로거 설정
 const logger = winston.createLogger({
@@ -65,17 +67,7 @@ class AMRQCServer {
 
       // Express 앱 초기화
       logger.info("🌐 Starting Express server...");
-      this.app = express();
-
-      // Express 미들웨어 설정
-      this.app.use(cors());
-      this.app.use(express.json());
-
-      // 서버 인스턴스를 app.locals에 저장
-      this.app.locals.amrServer = this;
-
-      // API 라우트 설정
-      this.app.use("/api/server", serverInfoRoutes);
+      this.initializeExpress();
 
       // Express 서버 시작
       this.httpServer = this.app.listen(this.config.httpPort, () => {
@@ -101,6 +93,43 @@ class AMRQCServer {
       logger.error("❌ Failed to start server:", error);
       process.exit(1);
     }
+  }
+
+  initializeExpress() {
+    this.app = express();
+
+    // CORS 설정
+    this.app.use(cors());
+
+    // JSON 파싱 미들웨어
+    this.app.use(express.json());
+
+    // 서버 인스턴스를 app.locals에 저장
+    this.app.locals.amrServer = this;
+
+    // API 라우트 설정
+    this.app.use("/api/server", serverInfoRoutes);
+    this.app.use("/api/data", sensorDataRoutes);
+    this.app.use("/api/mock", mockDataRoutes);
+
+    // 404 핸들러
+    this.app.use((req, res) => {
+      res.status(404).json({
+        success: false,
+        error: "Not Found",
+        message: `Cannot ${req.method} ${req.url}`,
+      });
+    });
+
+    // 에러 핸들러
+    this.app.use((err, req, res, next) => {
+      logger.error("Express error:", err);
+      res.status(500).json({
+        success: false,
+        error: "Internal Server Error",
+        message: err.message,
+      });
+    });
   }
 
   displayServerInfo() {

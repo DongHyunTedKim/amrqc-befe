@@ -129,6 +129,17 @@ export const NewSensorChart = ({ data }) => {
 };
 ```
 
+### 구현된 기능 목록
+
+- ✅ WebSocket 기반 실시간 센서 데이터 수신
+- ✅ REST API 데이터 조회 및 다운로드
+- ✅ 타임라인 리스트 뷰
+- ✅ **Chart.js 기반 시계열 그래프 뷰** (zoom/pan 지원)
+- ✅ **WebSocket 실시간 업데이트** (타임라인 및 차트)
+- ✅ 디바이스별 데이터 필터링
+- ✅ Mock 데이터 생성기
+- ✅ 연결 상태 관리 및 자동 재연결
+
 ## 시스템 아키텍처 다이어그램
 
 ```mermaid
