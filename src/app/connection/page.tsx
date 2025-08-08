@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useServerInfo } from "@/hooks/useServerInfo";
 import { useConnectedDevices } from "@/hooks/useConnectedDevices";
 import { QRCodeDisplay } from "@/components/QRCodeDisplay";
+import { AMRQRCodeGenerator } from "@/components/AMRQRCodeGenerator";
 import { useTheme } from "next-themes";
 
 export default function ConnectionPage() {
@@ -90,12 +91,15 @@ export default function ConnectionPage() {
   return (
     <div className="space-y-6">
       {/* 페이지 헤더 */}
-      <div>
-        <h2 className="text-3xl font-bold tracking-tight">서버 연결</h2>
-        <p className="text-muted-foreground">
-          스마트폰에서 아래 QR 코드를 스캔하거나 URL을 입력하여 서버에
-          연결하세요.
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">서버 연결</h2>
+          <p className="text-muted-foreground">
+            스마트폰에서 아래 QR 코드를 스캔하거나 URL을 입력하여 서버에
+            연결하세요.
+          </p>
+        </div>
+        <AMRQRCodeGenerator />
       </div>
 
       {/* 서버 상태 배너 */}
