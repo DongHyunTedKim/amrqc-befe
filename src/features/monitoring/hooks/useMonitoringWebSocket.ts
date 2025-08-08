@@ -207,11 +207,7 @@ export function useMonitoringWebSocket(options: WebSocketOptions = {}) {
       };
 
       ws.onclose = (event) => {
-        console.log(
-          "Monitoring WebSocket 연결 종료:",
-          event.code,
-          event.reason
-        );
+        console.log("Monitoring WebSocket 연결 종료:", event.code, event.reason);
         setState((prev) => ({
           ...prev,
           connected: false,

@@ -57,7 +57,24 @@ class DatabaseManager {
           sensorType TEXT NOT NULL,
           valueJson TEXT NOT NULL,
           createdAt INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+          sessionId TEXT,
           CONSTRAINT chk_sensorType CHECK (sensorType IN ('accelerometer', 'gyroscope', 'gps', 'temperature', 'battery', 'magnetometer'))
+        );
+      `);
+
+      // Sessions 테이블 생성
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS Sessions (
+          sessionId TEXT PRIMARY KEY,
+          deviceId TEXT NOT NULL,
+          startTime INTEGER NOT NULL,
+          endTime INTEGER,
+          status TEXT DEFAULT 'active',
+          description TEXT,
+          metadata TEXT,
+          createdAt INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+          updatedAt INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+          CONSTRAINT chk_session_status CHECK (status IN ('active', 'completed', 'error', 'paused'))
         );
       `);
 
@@ -67,6 +84,11 @@ class DatabaseManager {
         CREATE INDEX IF NOT EXISTS idx_sensor_type_time ON SensorData(sensorType, ts);
         CREATE INDEX IF NOT EXISTS idx_sensor_device_type_time ON SensorData(deviceId, sensorType, ts);
         CREATE INDEX IF NOT EXISTS idx_sensor_time ON SensorData(ts);
+        CREATE INDEX IF NOT EXISTS idx_sensor_session_time ON SensorData(sessionId, ts);
+        CREATE INDEX IF NOT EXISTS idx_sensor_session_type ON SensorData(sessionId, sensorType);
+        CREATE INDEX IF NOT EXISTS idx_sessions_device_time ON Sessions(deviceId, startTime);
+        CREATE INDEX IF NOT EXISTS idx_sessions_status ON Sessions(status);
+        CREATE INDEX IF NOT EXISTS idx_sessions_device_status ON Sessions(deviceId, status);
       `);
 
       logger.info("Database schema initialized");
@@ -81,6 +103,11 @@ class DatabaseManager {
       // 자주 사용하는 쿼리를 미리 준비
       this.statements = {
         insertSensor: this.db.prepare(`
+          INSERT INTO SensorData (deviceId, ts, sensorType, valueJson, sessionId)
+          VALUES (?, ?, ?, ?, ?)
+        `),
+
+        insertSensorLegacy: this.db.prepare(`
           INSERT INTO SensorData (deviceId, ts, sensorType, valueJson)
           VALUES (?, ?, ?, ?)
         `),
@@ -114,6 +141,54 @@ class DatabaseManager {
           FROM SensorData
           GROUP BY deviceId
         `),
+
+        // 세션 관련 statements
+        createSession: this.db.prepare(`
+          INSERT INTO Sessions (sessionId, deviceId, startTime, status, description)
+          VALUES (?, ?, ?, ?, ?)
+        `),
+
+        updateSession: this.db.prepare(`
+          UPDATE Sessions 
+          SET endTime = ?, status = ?, updatedAt = ?
+          WHERE sessionId = ?
+        `),
+
+        getSessionsByDevice: this.db.prepare(`
+          SELECT * FROM Sessions
+          WHERE deviceId = ?
+          ORDER BY startTime DESC
+        `),
+
+        getActiveSession: this.db.prepare(`
+          SELECT * FROM Sessions
+          WHERE deviceId = ? AND status = 'active'
+          ORDER BY startTime DESC
+          LIMIT 1
+        `),
+
+        getAllSessions: this.db.prepare(`
+          SELECT 
+            s.*,
+            COUNT(sd.id) as dataCount,
+            MIN(sd.ts) as firstDataTime,
+            MAX(sd.ts) as lastDataTime
+          FROM Sessions s
+          LEFT JOIN SensorData sd ON s.sessionId = sd.sessionId
+          GROUP BY s.sessionId
+          ORDER BY s.startTime DESC
+        `),
+
+        getSensorBySession: this.db.prepare(`
+          SELECT * FROM SensorData
+          WHERE sessionId = ? AND ts >= ? AND ts <= ?
+          ORDER BY ts DESC
+          LIMIT ?
+        `),
+
+        getSessionById: this.db.prepare(`
+          SELECT * FROM Sessions WHERE sessionId = ?
+        `),
       };
 
       logger.info("Prepared statements created");
@@ -123,8 +198,116 @@ class DatabaseManager {
     }
   }
 
-  // 트랜잭션을 사용한 배치 삽입
-  insertBatch(dataArray) {
+  // 세션 생성
+  createSession(deviceId, description = null) {
+    try {
+      const sessionId = `${deviceId}-${Date.now()}-${Math.random()
+        .toString(36)
+        .substr(2, 9)}`;
+      const startTime = Date.now();
+
+      const result = this.statements.createSession.run(
+        sessionId,
+        deviceId,
+        startTime,
+        "active",
+        description || `Auto-created session for ${deviceId}`
+      );
+
+      logger.info(`Session created: ${sessionId} for device ${deviceId}`);
+      return {
+        success: true,
+        sessionId,
+        startTime,
+      };
+    } catch (error) {
+      logger.error("Create session failed:", error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // 세션 종료
+  endSession(sessionId) {
+    try {
+      const endTime = Date.now();
+      const result = this.statements.updateSession.run(
+        endTime,
+        "completed",
+        endTime,
+        sessionId
+      );
+
+      logger.info(`Session ended: ${sessionId}`);
+      return { success: true, endTime };
+    } catch (error) {
+      logger.error("End session failed:", error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // 활성 세션 조회 또는 생성
+  getOrCreateActiveSession(deviceId) {
+    try {
+      // 기존 활성 세션 조회
+      const activeSession = this.statements.getActiveSession.get(deviceId);
+
+      if (activeSession) {
+        return {
+          success: true,
+          sessionId: activeSession.sessionId,
+          isNew: false,
+        };
+      }
+
+      // 새 세션 생성
+      const newSession = this.createSession(deviceId);
+      if (newSession.success) {
+        return {
+          success: true,
+          sessionId: newSession.sessionId,
+          isNew: true,
+        };
+      }
+
+      return newSession;
+    } catch (error) {
+      logger.error("Get or create session failed:", error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // 세션별 센서 데이터 조회
+  getSensorDataBySession(sessionId, startTime, endTime, limit = 1000) {
+    try {
+      const rows = this.statements.getSensorBySession.all(
+        sessionId,
+        startTime,
+        endTime,
+        limit
+      );
+
+      return rows.map((row) => ({
+        ...row,
+        value: JSON.parse(row.valueJson),
+      }));
+    } catch (error) {
+      logger.error("Query by session failed:", error);
+      return [];
+    }
+  }
+
+  // 모든 세션 조회
+  getAllSessions() {
+    try {
+      return this.statements.getAllSessions.all();
+    } catch (error) {
+      logger.error("Get all sessions failed:", error);
+      return [];
+    }
+  }
+
+  // 트랜잭션을 사용한 배치 삽입 (세션 지원)
+  insertBatch(dataArray, sessionId = null) {
     if (!Array.isArray(dataArray) || dataArray.length === 0) {
       return { success: false, error: "Invalid data array" };
     }
@@ -133,12 +316,22 @@ class DatabaseManager {
       let insertedCount = 0;
       for (const item of data) {
         try {
-          this.statements.insertSensor.run(
-            item.deviceId,
-            item.timestamp,
-            item.sensorType,
-            JSON.stringify(item.value)
-          );
+          if (sessionId || item.sessionId) {
+            this.statements.insertSensor.run(
+              item.deviceId,
+              item.timestamp,
+              item.sensorType,
+              JSON.stringify(item.value),
+              sessionId || item.sessionId
+            );
+          } else {
+            this.statements.insertSensorLegacy.run(
+              item.deviceId,
+              item.timestamp,
+              item.sensorType,
+              JSON.stringify(item.value)
+            );
+          }
           insertedCount++;
         } catch (error) {
           logger.error(`Failed to insert item:`, {
@@ -163,15 +356,26 @@ class DatabaseManager {
     }
   }
 
-  // 단일 데이터 삽입
-  insertSingle(data) {
+  // 단일 데이터 삽입 (세션 지원)
+  insertSingle(data, sessionId = null) {
     try {
-      const result = this.statements.insertSensor.run(
-        data.deviceId,
-        data.timestamp,
-        data.sensorType,
-        JSON.stringify(data.value)
-      );
+      let result;
+      if (sessionId || data.sessionId) {
+        result = this.statements.insertSensor.run(
+          data.deviceId,
+          data.timestamp,
+          data.sensorType,
+          JSON.stringify(data.value),
+          sessionId || data.sessionId
+        );
+      } else {
+        result = this.statements.insertSensorLegacy.run(
+          data.deviceId,
+          data.timestamp,
+          data.sensorType,
+          JSON.stringify(data.value)
+        );
+      }
       return { success: true, id: result.lastInsertRowid };
     } catch (error) {
       logger.error("Single insert failed:", error);

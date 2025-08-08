@@ -14,7 +14,7 @@ function NoSSRComponent({ children, fallback = null }: NoSSRProps) {
 
 const NoSSR = dynamic(() => Promise.resolve(NoSSRComponent), {
   ssr: false,
-  loading: ({ fallback }: { fallback?: ReactNode }) => <>{fallback}</>,
+  loading: () => null,
 });
 
 export default NoSSR;

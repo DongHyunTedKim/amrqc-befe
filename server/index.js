@@ -110,6 +110,7 @@ class AMRQCServer {
     // API 라우트 설정
     this.app.use("/api/server", serverInfoRoutes);
     this.app.use("/api/data", sensorDataRoutes);
+    this.app.use("/api/sessions", require("./routes/sessions"));
     this.app.use("/api/mock", mockDataRoutes);
 
     // 404 핸들러

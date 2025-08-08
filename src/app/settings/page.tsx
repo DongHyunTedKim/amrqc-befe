@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
+import { useTheme } from "next-themes";
 import {
   Card,
   CardContent,
@@ -7,14 +9,60 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
-import { Server, Database, Info, Save, RotateCcw } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Server, Info, Monitor, Shield } from "lucide-react";
+
+// 간단한 로컬 스토리지 유틸
+const loadBoolean = (key: string, defaultValue: boolean) => {
+  if (typeof window === "undefined") return defaultValue;
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw === null) return defaultValue;
+    return raw === "true";
+  } catch {
+    return defaultValue;
+  }
+};
+
+const saveBoolean = (key: string, value: boolean) => {
+  try {
+    localStorage.setItem(key, String(value));
+  } catch {}
+};
 
 export default function SettingsPage() {
+  const { theme, setTheme } = useTheme();
+
+  const [autoStart, setAutoStart] = useState<boolean>(true);
+  const [showNotifications, setShowNotifications] = useState<boolean>(true);
+  const [autoRefresh, setAutoRefresh] = useState<boolean>(true);
+  const [corsEnabled, setCorsEnabled] = useState<boolean>(true);
+  const [loggingEnabled, setLoggingEnabled] = useState<boolean>(true);
+
+  useEffect(() => {
+    setAutoStart(loadBoolean("settings.autoStart", true));
+    setShowNotifications(loadBoolean("settings.showNotifications", true));
+    setAutoRefresh(loadBoolean("settings.autoRefresh", true));
+    setCorsEnabled(loadBoolean("settings.corsEnabled", true));
+    setLoggingEnabled(loadBoolean("settings.loggingEnabled", true));
+  }, []);
+
+  const themeLabel = useMemo(() => {
+    if (theme === "light") return "밝은 테마";
+    if (theme === "dark") return "어두운 테마";
+    return "시스템 설정";
+  }, [theme]);
+
   return (
     <div className="space-y-6">
       {/* 페이지 헤더 */}
@@ -65,77 +113,158 @@ export default function SettingsPage() {
                 시스템 시작 시 서버 자동 실행
               </p>
             </div>
-            <Checkbox defaultChecked />
+            <Switch
+              checked={autoStart}
+              onCheckedChange={(v) => {
+                setAutoStart(v);
+                saveBoolean("settings.autoStart", v);
+              }}
+            />
           </div>
 
           <Separator />
-
-          <div className="flex justify-end">
-            <Button className="gap-2">
-              <Save className="h-4 w-4" />
-              서버 설정 저장
-            </Button>
-          </div>
         </CardContent>
       </Card>
 
-      {/* 데이터 관리 */}
+      {/* 일반 */}
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
-            <Database className="h-5 w-5" />
-            <CardTitle>데이터 관리</CardTitle>
+            <Monitor className="h-5 w-5" />
+            <CardTitle>일반</CardTitle>
           </div>
           <CardDescription>
-            저장된 센서 데이터를 관리하고 정리합니다.
+            AMR QC 솔루션의 표시 및 동작 설정을 관리합니다.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <Label>데이터베이스 크기</Label>
-              <div className="flex items-center gap-2">
-                <Input value="0 MB" readOnly className="flex-1" />
-                <Button variant="outline" size="sm">
-                  새로고침
-                </Button>
-              </div>
+              <Label htmlFor="theme">테마 설정</Label>
+              <Select
+                value={theme === undefined ? "system" : (theme as string)}
+                onValueChange={(v) =>
+                  setTheme(v as "light" | "dark" | "system")
+                }
+              >
+                <SelectTrigger id="theme">
+                  <SelectValue placeholder={themeLabel} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="light">밝은 테마</SelectItem>
+                  <SelectItem value="dark">어두운 테마</SelectItem>
+                  <SelectItem value="system">시스템 설정</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">즉시 적용됩니다.</p>
             </div>
             <div className="space-y-2">
-              <Label>보관 기간</Label>
-              <Input type="number" placeholder="30" defaultValue="30" min="1" />
-              <p className="text-xs text-muted-foreground">
-                설정된 기간 이후 데이터는 자동 삭제됩니다.
+              <Label htmlFor="language">언어 설정</Label>
+              <Input
+                id="language"
+                defaultValue="한국어 (Korean)"
+                readOnly
+                className="bg-muted"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>알림 표시</Label>
+              <p className="text-sm text-muted-foreground">
+                시스템 알림 및 토스트 메시지 표시
               </p>
             </div>
+            <Switch
+              checked={showNotifications}
+              onCheckedChange={(v) => {
+                setShowNotifications(v);
+                saveBoolean("settings.showNotifications", v);
+              }}
+            />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>자동 새로고침</Label>
+              <p className="text-sm text-muted-foreground">
+                실시간 데이터 자동 갱신 (5초 간격)
+              </p>
+            </div>
+            <Switch
+              checked={autoRefresh}
+              onCheckedChange={(v) => {
+                setAutoRefresh(v);
+                saveBoolean("settings.autoRefresh", v);
+              }}
+            />
           </div>
 
           <Separator />
+        </CardContent>
+      </Card>
 
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="font-medium">데이터 내보내기</h4>
-                <p className="text-sm text-muted-foreground">
-                  전체 데이터를 CSV 형식으로 내보냅니다.
-                </p>
-              </div>
-              <Button variant="outline">내보내기</Button>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="font-medium">데이터 초기화</h4>
-                <p className="text-sm text-muted-foreground text-red-500">
-                  모든 센서 데이터가 삭제됩니다.
-                </p>
-              </div>
-              <Button variant="destructive" className="gap-2">
-                <RotateCcw className="h-4 w-4" />
-                초기화
-              </Button>
-            </div>
+      {/* 보안 설정 */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Shield className="h-5 w-5" />
+            <CardTitle>보안 설정</CardTitle>
           </div>
+          <CardDescription>
+            시스템 보안 및 접근 제어 설정입니다.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>CORS 허용</Label>
+              <p className="text-sm text-muted-foreground">
+                외부 도메인에서의 API 접근 허용
+              </p>
+            </div>
+            <Switch
+              checked={corsEnabled}
+              onCheckedChange={(v) => {
+                setCorsEnabled(v);
+                saveBoolean("settings.corsEnabled", v);
+              }}
+            />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>로그 기록</Label>
+              <p className="text-sm text-muted-foreground">
+                시스템 활동 로그 파일 생성
+              </p>
+            </div>
+            <Switch
+              checked={loggingEnabled}
+              onCheckedChange={(v) => {
+                setLoggingEnabled(v);
+                saveBoolean("settings.loggingEnabled", v);
+              }}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="max-connections">최대 동시 연결 수</Label>
+            <Input
+              id="max-connections"
+              type="number"
+              placeholder="10"
+              defaultValue="10"
+              min="1"
+              max="50"
+            />
+            <p className="text-xs text-muted-foreground">
+              동시에 연결 가능한 스마트폰 최대 개수
+            </p>
+          </div>
+
+          <Separator />
         </CardContent>
       </Card>
 

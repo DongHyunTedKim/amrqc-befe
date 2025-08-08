@@ -1,15 +1,28 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import {
   Database,
-  CheckCircle,
   Loader2,
   AlertTriangle,
   Trash2,
@@ -17,7 +30,9 @@ import {
   HardDrive,
   Activity,
   Clock,
-  Users,
+  Download,
+  RotateCcw,
+  Settings,
 } from "lucide-react";
 
 interface DatabaseStatus {
@@ -29,6 +44,12 @@ interface DatabaseStatus {
   };
   devices: Array<{ deviceId: string; count: number }>;
   databaseSize: string;
+}
+
+interface DatabaseSettings {
+  retentionDays: number;
+  autoCleanup: boolean;
+  compressionEnabled: boolean;
 }
 
 interface DeviceInfo {
@@ -43,23 +64,23 @@ export default function DatabasePage() {
   const [databaseStatus, setDatabaseStatus] = useState<DatabaseStatus | null>(
     null
   );
-  const [devices, setDevices] = useState<DeviceInfo[]>([]);
+  const [databaseSettings, setDatabaseSettings] = useState<DatabaseSettings>({
+    retentionDays: 30,
+    autoCleanup: true,
+    compressionEnabled: false,
+  });
   const [loadingStatus, setLoadingStatus] = useState(false);
-  const [loadingDevices, setLoadingDevices] = useState(false);
-  const [generating, setGenerating] = useState(false);
   const [clearing, setClearing] = useState(false);
-
-  // Mock 데이터 생성 옵션
-  const [days, setDays] = useState("1");
-  const [interval, setInterval] = useState("1000");
-  const [deviceCount, setDeviceCount] = useState("3");
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
 
   const { toast } = useToast();
 
   // 페이지 로드 시 데이터 조회
   useEffect(() => {
     fetchDatabaseStatus();
-    fetchDevices();
   }, []);
 
   // 데이터베이스 상태 조회
@@ -83,83 +104,8 @@ export default function DatabasePage() {
     }
   };
 
-  // 디바이스 목록 조회
-  const fetchDevices = async () => {
-    setLoadingDevices(true);
-    try {
-      const response = await fetch("http://localhost:8000/api/data/devices");
-      if (!response.ok) throw new Error("Failed to fetch devices");
-
-      const result = await response.json();
-      setDevices(result.data);
-    } catch (error) {
-      console.error("Error fetching devices:", error);
-      toast({
-        title: "오류",
-        description: "디바이스 목록 조회에 실패했습니다.",
-        variant: "destructive",
-      });
-    } finally {
-      setLoadingDevices(false);
-    }
-  };
-
-  // 벌크 Mock 데이터 생성
-  const handleGenerateBulkData = async () => {
-    setGenerating(true);
-
-    try {
-      const response = await fetch("http://localhost:8000/api/mock/generate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          days: parseFloat(days),
-          interval: parseInt(interval),
-          devices: parseInt(deviceCount),
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to generate data");
-      }
-
-      const result = await response.json();
-
-      toast({
-        title: "성공",
-        description: `${result.details.totalRecords.toLocaleString()}개의 데이터가 생성되었습니다.`,
-      });
-
-      // 상태 새로고침
-      await Promise.all([fetchDatabaseStatus(), fetchDevices()]);
-    } catch (error) {
-      console.error("Error generating data:", error);
-      toast({
-        title: "오류",
-        description:
-          error instanceof Error
-            ? error.message
-            : "데이터 생성에 실패했습니다.",
-        variant: "destructive",
-      });
-    } finally {
-      setGenerating(false);
-    }
-  };
-
   // 데이터베이스 초기화
   const handleClearDatabase = async () => {
-    if (
-      !confirm(
-        "정말로 모든 센서 데이터를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다."
-      )
-    ) {
-      return;
-    }
-
     setClearing(true);
 
     try {
@@ -181,7 +127,7 @@ export default function DatabasePage() {
       });
 
       // 상태 새로고침
-      await Promise.all([fetchDatabaseStatus(), fetchDevices()]);
+      await fetchDatabaseStatus();
     } catch (error) {
       console.error("Error clearing data:", error);
       toast({
@@ -194,13 +140,88 @@ export default function DatabasePage() {
     }
   };
 
+  const isTypedConfirmationValid =
+    confirmText.trim().toUpperCase() === "DELETE ALL";
+
+  const onRequestDeleteAll = () => {
+    setConfirmText("");
+    setConfirmOpen(true);
+  };
+
+  const onConfirmDeleteAll = async () => {
+    if (!isTypedConfirmationValid) return;
+    setConfirmOpen(false);
+    await handleClearDatabase();
+  };
+
   // 데이터베이스 새로고침
   const handleRefresh = async () => {
-    await Promise.all([fetchDatabaseStatus(), fetchDevices()]);
+    await fetchDatabaseStatus();
     toast({
       title: "새로고침 완료",
       description: "데이터베이스 상태가 업데이트되었습니다.",
     });
+  };
+
+  // 데이터 내보내기
+  const handleExportData = async () => {
+    setExporting(true);
+    try {
+      const response = await fetch("http://localhost:8000/api/data/download", {
+        method: "GET",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to export data");
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `sensor-data-${new Date().toISOString().split("T")[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast({
+        title: "내보내기 완료",
+        description: "데이터가 성공적으로 내보내졌습니다.",
+      });
+    } catch (error) {
+      console.error("Error exporting data:", error);
+      toast({
+        title: "오류",
+        description: "데이터 내보내기에 실패했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // 설정 저장
+  const handleSaveSettings = async () => {
+    setSavingSettings(true);
+    try {
+      // API 호출은 실제 구현 시 추가
+      await new Promise((resolve) => setTimeout(resolve, 1000)); // 임시 딜레이
+
+      toast({
+        title: "설정 저장 완료",
+        description: "데이터베이스 설정이 저장되었습니다.",
+      });
+    } catch (error) {
+      console.error("Error saving settings:", error);
+      toast({
+        title: "오류",
+        description: "설정 저장에 실패했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingSettings(false);
+    }
   };
 
   return (
@@ -210,10 +231,10 @@ export default function DatabasePage() {
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-2">
             <Database className="h-8 w-8" />
-            데이터베이스 관리
+            데이터베이스
           </h1>
           <p className="text-muted-foreground mt-2">
-            센서 데이터베이스 상태 조회 및 관리
+            디바이스 & 센서 데이터베이스 관리
           </p>
         </div>
         <Button onClick={handleRefresh} variant="outline">
@@ -237,25 +258,6 @@ export default function DatabasePage() {
                 databaseStatus?.totalRecords.toLocaleString() || "0"
               )}
             </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">활성 디바이스</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {loadingDevices ? (
-                <Loader2 className="h-6 w-6 animate-spin" />
-              ) : (
-                devices.filter((d) => d.active).length
-              )}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              전체 {devices.length}개
-            </p>
           </CardContent>
         </Card>
 
@@ -307,127 +309,111 @@ export default function DatabasePage() {
         </Card>
       </div>
 
-      {/* 디바이스 목록 */}
+      {/* 데이터베이스 설정 */}
       <Card>
         <CardHeader>
-          <CardTitle>디바이스 목록</CardTitle>
+          <div className="flex items-center gap-2">
+            <Settings className="h-5 w-5" />
+            <CardTitle>데이터베이스 설정</CardTitle>
+          </div>
+          <CardDescription>
+            저장된 센서 데이터 관리 및 정리 설정입니다.
+          </CardDescription>
         </CardHeader>
-        <CardContent>
-          {loadingDevices ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin" />
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="retention-days">데이터 보관 기간 (일)</Label>
+              <Input
+                id="retention-days"
+                type="number"
+                min="1"
+                max="365"
+                value={databaseSettings.retentionDays}
+                onChange={(e) =>
+                  setDatabaseSettings((prev) => ({
+                    ...prev,
+                    retentionDays: parseInt(e.target.value) || 30,
+                  }))
+                }
+              />
+              <p className="text-xs text-muted-foreground">
+                설정된 기간 이후 데이터는 자동 삭제됩니다.
+              </p>
             </div>
-          ) : devices.length > 0 ? (
-            <div className="space-y-3">
-              {devices.map((device) => (
-                <div
-                  key={device.deviceId}
-                  className="flex items-center justify-between p-3 border rounded-lg"
+
+            <div className="space-y-2">
+              <Label>현재 데이터베이스 크기</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  value={databaseStatus?.databaseSize || "0 KB"}
+                  readOnly
+                  className="flex-1"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRefresh}
+                  disabled={loadingStatus}
                 >
-                  <div className="flex items-center gap-3">
-                    <div>
-                      <div className="font-medium">{device.deviceId}</div>
-                      <div className="text-sm text-muted-foreground">
-                        첫 데이터: {new Date(device.firstSeen).toLocaleString()}
-                      </div>
-                      <div className="text-sm text-muted-foreground">
-                        마지막: {new Date(device.lastSeen).toLocaleString()}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant={device.active ? "default" : "secondary"}>
-                      {device.active ? "활성" : "비활성"}
-                    </Badge>
-                    <div className="text-right">
-                      <div className="font-medium">
-                        {device.dataCount.toLocaleString()}
-                      </div>
-                      <div className="text-sm text-muted-foreground">
-                        레코드
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              등록된 디바이스가 없습니다
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* 벌크 데이터 생성 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>벌크 데이터 생성</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="grid gap-4">
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="days">기간 (일)</Label>
-                <Input
-                  id="days"
-                  type="number"
-                  value={days}
-                  onChange={(e) => setDays(e.target.value)}
-                  min="0.1"
-                  max="30"
-                  step="0.1"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="interval">간격 (ms)</Label>
-                <Input
-                  id="interval"
-                  type="number"
-                  value={interval}
-                  onChange={(e) => setInterval(e.target.value)}
-                  min="100"
-                  max="60000"
-                  step="100"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="devices">디바이스 수</Label>
-                <Input
-                  id="devices"
-                  type="number"
-                  value={deviceCount}
-                  onChange={(e) => setDeviceCount(e.target.value)}
-                  min="1"
-                  max="5"
-                />
+                  {loadingStatus ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    "새로고침"
+                  )}
+                </Button>
               </div>
             </div>
+          </div>
 
-            <div className="text-sm text-muted-foreground">
-              약{" "}
-              {Math.floor(
-                ((parseFloat(days) * 24 * 3600 * 1000) / parseInt(interval)) *
-                  parseInt(deviceCount) *
-                  0.7
-              ).toLocaleString()}
-              개의 데이터가 생성됩니다.
+          <Separator />
+
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="font-medium">데이터 내보내기</h4>
+                <p className="text-sm text-muted-foreground">
+                  전체 데이터를 CSV 형식으로 내보냅니다.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                onClick={handleExportData}
+                disabled={exporting || databaseStatus?.totalRecords === 0}
+                className="gap-2"
+              >
+                {exporting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    내보내기 중...
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-4 w-4" />
+                    내보내기
+                  </>
+                )}
+              </Button>
             </div>
+          </div>
 
+          <Separator />
+
+          <div className="flex justify-end">
             <Button
-              onClick={handleGenerateBulkData}
-              disabled={generating}
-              className="w-full"
+              onClick={handleSaveSettings}
+              disabled={savingSettings}
+              className="gap-2"
             >
-              {generating ? (
+              {savingSettings ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  생성 중...
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  저장 중...
                 </>
               ) : (
                 <>
-                  <CheckCircle className="mr-2 h-4 w-4" />
-                  벌크 데이터 생성
+                  <Database className="h-4 w-4" />
+                  설정 저장
                 </>
               )}
             </Button>
@@ -439,33 +425,73 @@ export default function DatabasePage() {
       <Card className="border-red-200">
         <CardHeader>
           <CardTitle className="text-red-600">위험 구역</CardTitle>
+          <CardDescription className="text-red-600">
+            아래 작업들은 되돌릴 수 없습니다. 신중히 진행하세요.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <AlertTriangle className="h-4 w-4 text-red-500" />
-            <span>아래 작업들은 되돌릴 수 없습니다. 신중히 진행하세요.</span>
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="font-medium">데이터 초기화</h4>
+              <p className="text-sm text-red-500">
+                모든 센서 데이터가 영구적으로 삭제됩니다.
+              </p>
+            </div>
+            <Button
+              variant="destructive"
+              onClick={onRequestDeleteAll}
+              disabled={clearing || databaseStatus?.totalRecords === 0}
+              className="gap-2"
+            >
+              {clearing ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  삭제 중...
+                </>
+              ) : (
+                <>
+                  <RotateCcw className="h-4 w-4" />
+                  모든 데이터 삭제
+                </>
+              )}
+            </Button>
           </div>
-
-          <Button
-            variant="destructive"
-            onClick={handleClearDatabase}
-            disabled={clearing || databaseStatus?.totalRecords === 0}
-            className="w-full"
-          >
-            {clearing ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                삭제 중...
-              </>
-            ) : (
-              <>
-                <Trash2 className="mr-2 h-4 w-4" />
-                모든 데이터 삭제
-              </>
-            )}
-          </Button>
         </CardContent>
       </Card>
+
+      {/* 삭제 확인 다이얼로그 */}
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>모든 데이터를 삭제하시겠습니까?</DialogTitle>
+            <DialogDescription>
+              이 작업은 되돌릴 수 없습니다. 계속하려면 아래에 대문자로 다음
+              문구를 입력하세요: DELETE ALL
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="confirmText">확인 문구</Label>
+            <Input
+              id="confirmText"
+              placeholder="DELETE ALL"
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmOpen(false)}>
+              취소
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={!isTypedConfirmationValid || clearing}
+              onClick={onConfirmDeleteAll}
+            >
+              영구 삭제
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

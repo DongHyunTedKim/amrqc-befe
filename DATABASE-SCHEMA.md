@@ -13,9 +13,28 @@
 
 ## 2. 테이블 스키마
 
-### 2.1 SensorData 테이블
+### 2.1 Sessions 테이블
 
-센서 데이터를 저장하는 핵심 테이블입니다.
+데이터 수집 세션을 관리하는 테이블입니다. <DeviceID, 시작시간>으로 데이터셋을 구분합니다.
+
+```sql
+CREATE TABLE IF NOT EXISTS Sessions (
+    sessionId TEXT PRIMARY KEY,             -- UUID 형태의 세션 ID
+    deviceId TEXT NOT NULL,                 -- 디바이스 ID
+    startTime INTEGER NOT NULL,             -- 세션 시작 시간 (Unix timestamp ms)
+    endTime INTEGER,                        -- 세션 종료 시간 (NULL = 진행중)
+    status TEXT DEFAULT 'active',           -- active, completed, error, paused
+    description TEXT,                       -- 세션 설명 (선택사항)
+    metadata TEXT,                          -- JSON 형태의 추가 메타데이터
+    createdAt INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+    updatedAt INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+    CONSTRAINT chk_session_status CHECK (status IN ('active', 'completed', 'error', 'paused'))
+);
+```
+
+### 2.2 SensorData 테이블
+
+센서 데이터를 저장하는 핵심 테이블입니다. 각 데이터는 세션과 연결됩니다.
 
 ```sql
 CREATE TABLE IF NOT EXISTS SensorData (
@@ -25,11 +44,13 @@ CREATE TABLE IF NOT EXISTS SensorData (
     sensorType TEXT NOT NULL,
     valueJson TEXT NOT NULL,                -- JSON 형태의 센서 값
     createdAt INTEGER DEFAULT (strftime('%s', 'now') * 1000),
-    CONSTRAINT chk_sensorType CHECK (sensorType IN ('accelerometer', 'gyroscope', 'gps', 'temperature', 'battery', 'magnetometer'))
+    sessionId TEXT,                         -- 세션 ID (Sessions 테이블 참조)
+    CONSTRAINT chk_sensorType CHECK (sensorType IN ('accelerometer', 'gyroscope', 'gps', 'temperature', 'battery', 'magnetometer')),
+    FOREIGN KEY (sessionId) REFERENCES Sessions(sessionId)
 );
 ```
 
-### 2.2 Devices 테이블 (선택사항)
+### 2.3 Devices 테이블 (선택사항)
 
 디바이스 메타 정보를 관리하는 테이블입니다.
 
@@ -46,7 +67,7 @@ CREATE TABLE IF NOT EXISTS Devices (
 );
 ```
 
-### 2.3 DataSummary 테이블 (선택사항)
+### 2.4 DataSummary 테이블 (선택사항)
 
 집계 데이터를 저장하는 테이블입니다.
 
@@ -68,27 +89,33 @@ CREATE TABLE IF NOT EXISTS DataSummary (
 ### 3.1 주요 인덱스
 
 ```sql
--- 디바이스별 시간 범위 조회용
+-- 세션 관련 인덱스
+CREATE INDEX idx_sessions_device_time ON Sessions(deviceId, startTime);
+CREATE INDEX idx_sessions_status ON Sessions(status);
+CREATE INDEX idx_sessions_device_status ON Sessions(deviceId, status);
+
+-- 센서 데이터 인덱스
 CREATE INDEX idx_sensor_device_time ON SensorData(deviceId, ts);
-
--- 센서 타입별 시간 범위 조회용
 CREATE INDEX idx_sensor_type_time ON SensorData(sensorType, ts);
-
--- 복합 조회용 (디바이스 + 센서 타입 + 시간)
 CREATE INDEX idx_sensor_device_type_time ON SensorData(deviceId, sensorType, ts);
-
--- 시간 기반 조회용
 CREATE INDEX idx_sensor_time ON SensorData(ts);
+
+-- 세션 기반 조회용 인덱스
+CREATE INDEX idx_sensor_session_time ON SensorData(sessionId, ts);
+CREATE INDEX idx_sensor_session_type ON SensorData(sessionId, sensorType);
 ```
 
 ### 3.2 인덱스 선택 근거
 
-| 쿼리 패턴                   | 사용 인덱스                 | 설명                             |
-| --------------------------- | --------------------------- | -------------------------------- |
-| 특정 디바이스의 데이터 조회 | idx_sensor_device_time      | deviceId로 필터링 후 시간순 정렬 |
-| 특정 센서 타입 조회         | idx_sensor_type_time        | sensorType으로 필터링            |
-| 시간 범위 조회              | idx_sensor_time             | 전체 데이터에서 시간 범위 필터   |
-| 복합 조건 조회              | idx_sensor_device_type_time | 디바이스 + 센서 타입 동시 필터   |
+| 쿼리 패턴                   | 사용 인덱스                 | 설명                              |
+| --------------------------- | --------------------------- | --------------------------------- |
+| 세션별 데이터 조회          | idx_sensor_session_time     | sessionId로 필터링 후 시간순 정렬 |
+| 디바이스의 세션 목록        | idx_sessions_device_time    | deviceId로 세션 목록 조회         |
+| 활성 세션 조회              | idx_sessions_status         | status='active' 필터링            |
+| 특정 디바이스의 데이터 조회 | idx_sensor_device_time      | deviceId로 필터링 후 시간순 정렬  |
+| 특정 센서 타입 조회         | idx_sensor_type_time        | sensorType으로 필터링             |
+| 시간 범위 조회              | idx_sensor_time             | 전체 데이터에서 시간 범위 필터    |
+| 복합 조건 조회              | idx_sensor_device_type_time | 디바이스 + 센서 타입 동시 필터    |
 
 ## 4. better-sqlite3 연결 코드
 

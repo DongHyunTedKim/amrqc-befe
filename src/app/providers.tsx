@@ -50,7 +50,6 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       defaultTheme="system"
       enableSystem
       disableTransitionOnChange
-      suppressHydrationWarning
       storageKey="amrqc-theme"
       forcedTheme={undefined}
     >

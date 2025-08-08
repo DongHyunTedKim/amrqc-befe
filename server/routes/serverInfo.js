@@ -82,6 +82,11 @@ router.get("/status", (req, res) => {
 
   const stats = server.getStats();
 
+  // 스마트폰만 카운트 (deviceId가 등록된 클라이언트만)
+  const smartphoneConnections = server.wsServer?.getConnectedDevices
+    ? server.wsServer.getConnectedDevices().length
+    : 0;
+
   res.json({
     success: true,
     data: {
@@ -90,7 +95,8 @@ router.get("/status", (req, res) => {
       uptime: stats.uptime,
       websocket: {
         connected: true,
-        connections: stats.server?.currentConnections || 0,
+        connections: smartphoneConnections, // 스마트폰만 카운트
+        totalConnections: stats.server?.currentConnections || 0, // 전체 연결 (웹 클라이언트 포함)
         messagesReceived: stats.server?.messagesReceived || 0,
       },
       queue: {

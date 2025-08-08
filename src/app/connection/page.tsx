@@ -9,13 +9,14 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Copy, RefreshCw, Wifi, Smartphone, Activity, X } from "lucide-react";
+import { Copy, Wifi, Smartphone, Activity, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useServerInfo } from "@/hooks/useServerInfo";
 import { useConnectedDevices } from "@/hooks/useConnectedDevices";
 import { QRCodeDisplay } from "@/components/QRCodeDisplay";
 import { AMRQRCodeGenerator } from "@/components/AMRQRCodeGenerator";
 import { useTheme } from "next-themes";
+import { ConnectionTopology } from "@/features/connection/components/ConnectionTopology";
 
 export default function ConnectionPage() {
   const { toast } = useToast();
@@ -87,17 +88,15 @@ export default function ConnectionPage() {
   };
 
   const isServerOnline = serverStatus?.websocket?.connected ?? false;
+  const serverConnections = serverStatus?.websocket?.connections ?? 0;
+  const viewerOnline = true;
 
   return (
     <div className="space-y-6">
       {/* 페이지 헤더 */}
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">서버 연결</h2>
-          <p className="text-muted-foreground">
-            스마트폰에서 아래 QR 코드를 스캔하거나 URL을 입력하여 서버에
-            연결하세요.
-          </p>
+          <h2 className="text-3xl font-bold tracking-tight">연결</h2>
         </div>
         <AMRQRCodeGenerator />
       </div>
@@ -211,28 +210,25 @@ export default function ConnectionPage() {
                   <p>HTTP API 포트: {serverInfo?.ports.http || "-"}</p>
                 </div>
               </div>
-
-              {serverStatus && serverStatus.websocket.connections > 0 && (
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">연결 통계</label>
-                  <div className="text-sm text-muted-foreground space-y-1">
-                    <p>현재 연결: {serverStatus.websocket.connections}개</p>
-                    <p>
-                      수신 메시지:{" "}
-                      {serverStatus.websocket.messagesReceived?.toLocaleString() ||
-                        0}
-                      개
-                    </p>
-                    {serverStatus.queue && (
-                      <p>패킷 유실률: {serverStatus.queue.lossRate}%</p>
-                    )}
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </CardContent>
       </Card>
+
+      {/* 연결 토폴로지 */}
+      <ConnectionTopology
+        serverOnline={isServerOnline}
+        viewerOnline={viewerOnline}
+        devices={devices
+          .filter((d) => !d.deviceId?.startsWith("unregistered-"))
+          .map((d) => ({
+            id: d.id,
+            deviceId: d.deviceId,
+            status: d.status,
+            connectedAt: d.connectedAt,
+            messageCount: d.messageCount,
+          }))}
+      />
 
       {/* 연결된 스마트폰 목록 */}
       <Card>
@@ -256,48 +252,74 @@ export default function ConnectionPage() {
             </div>
           ) : (
             <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-              {devices.map((device) => (
-                <Card key={device.id} className="relative">
-                  <CardContent className="pt-6">
-                    <div className="flex items-start justify-between">
-                      <div className="space-y-1 flex-1">
-                        <div className="flex items-center gap-2">
-                          <Smartphone className="h-4 w-4" />
-                          <span className="font-medium text-sm">
-                            {device.deviceId}
-                          </span>
+              {devices
+                .filter((d) => !d.deviceId?.startsWith("unregistered-"))
+                .map((device) => (
+                  <Card key={device.id} className="relative">
+                    <CardContent className="pt-6">
+                      <div className="flex items-start justify-between">
+                        <div className="space-y-1 flex-1">
+                          <div className="flex items-center gap-2">
+                            <Smartphone className="h-4 w-4" />
+                            <span className="font-medium text-sm">
+                              {device.deviceId}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            연결 시간: {formatTime(device.connectedAt)}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            수신 메시지: {device.messageCount.toLocaleString()}
+                            개
+                          </p>
                         </div>
-                        <p className="text-xs text-muted-foreground">
-                          연결 시간: {formatTime(device.connectedAt)}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          수신 메시지: {device.messageCount.toLocaleString()}개
-                        </p>
+                        <div className="flex items-center gap-2">
+                          <Activity
+                            className={`h-4 w-4 ${
+                              device.status === "connected"
+                                ? "text-green-500"
+                                : "text-gray-400"
+                            }`}
+                          />
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => disconnectDevice(device.deviceId)}
+                            className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                            title="연결 해제"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Activity
-                          className={`h-4 w-4 ${
-                            device.status === "connected"
-                              ? "text-green-500"
-                              : "text-gray-400"
-                          }`}
-                        />
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => disconnectDevice(device.deviceId)}
-                          className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
-                          title="연결 해제"
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                    </CardContent>
+                  </Card>
+                ))}
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* 스마트폰과 AMR의 관계 */}
+      <Card>
+        <CardHeader>
+          <CardTitle>스마트폰과 AMR의 관계</CardTitle>
+          <CardDescription>
+            스마트폰이 AMR 장비에 거치되어 센서 데이터를 수집하는 과정입니다.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <ol className="list-decimal list-inside space-y-2 text-sm">
+            <li>스마트폰에서 AMR QC 앱을 실행하고 서버에 연결합니다.</li>
+            <li>테스트할 AMR 장비의 QR 코드를 스캔하여 AMR ID를 식별합니다.</li>
+            <li>
+              스마트폰을 해당 AMR에 거치하면 센서 데이터 수집이 시작됩니다.
+            </li>
+            <li>수집된 데이터는 실시간으로 서버에 전송됩니다.</li>
+            <li>
+              하나의 스마트폰은 여러 AMR을 순차적으로 테스트할 수 있습니다.
+            </li>
+          </ol>
         </CardContent>
       </Card>
 

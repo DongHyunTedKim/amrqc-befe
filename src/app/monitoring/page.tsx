@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { SessionSelector } from "@/components/SessionSelector";
 import {
   BarChart3,
   List,
@@ -32,7 +33,7 @@ import {
 import { useState, useEffect, useCallback } from "react";
 const MonitoringChart = dynamic(
   () =>
-    import("@/features/timeline/components/TimelineChart").then(
+    import("@/features/monitoring/components/MonitoringChart").then(
       (m) => m.MonitoringChart
     ),
   {
@@ -44,7 +45,7 @@ const MonitoringChart = dynamic(
     ),
   }
 );
-import { useMonitoringWebSocket } from "@/features/timeline/hooks/useTimelineWebSocket";
+import { useMonitoringWebSocket } from "@/features/monitoring/hooks/useMonitoringWebSocket";
 
 // 센서 데이터 타입 정의
 interface SensorData {
@@ -84,6 +85,9 @@ interface SummaryData {
 export default function MonitoringPage() {
   const [viewMode, setViewMode] = useState<"list" | "graph">("list");
   const [selectedAMR, setSelectedAMR] = useState<string>("all");
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(
+    null
+  );
   const [sensorData, setSensorData] = useState<SensorData[]>([]);
   const [summaryData, setSummaryData] = useState<SummaryData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -108,22 +112,32 @@ export default function MonitoringPage() {
     setError(null);
 
     try {
-      // 최근 24시간 데이터 조회
-      const endTime = Date.now();
-      const startTime = endTime - 24 * 60 * 60 * 1000; // 24시간 전
+      let url = "";
+      let params = new URLSearchParams();
 
-      const params = new URLSearchParams({
-        startTs: startTime.toString(),
-        endTs: endTime.toString(),
-        limit: viewMode === "graph" ? "1000" : "50", // 그래프 모드에서는 더 많은 데이터
-      });
+      if (selectedSessionId) {
+        // 세션 기반 조회
+        url = `${API_BASE}/sessions/${selectedSessionId}/data`;
+        params.append("limit", viewMode === "graph" ? "1000" : "50");
+      } else {
+        // 기존 디바이스 기반 조회 (호환성 유지)
+        url = `${API_BASE}/data`;
 
-      // AMR 필터 적용
-      if (selectedAMR !== "all") {
-        params.append("deviceId", selectedAMR);
+        // 최근 24시간 데이터 조회
+        const endTime = Date.now();
+        const startTime = endTime - 24 * 60 * 60 * 1000; // 24시간 전
+
+        params.append("startTs", startTime.toString());
+        params.append("endTs", endTime.toString());
+        params.append("limit", viewMode === "graph" ? "1000" : "50");
+
+        // AMR 필터 적용
+        if (selectedAMR !== "all") {
+          params.append("deviceId", selectedAMR);
+        }
       }
 
-      const response = await fetch(`${API_BASE}/data?${params}`);
+      const response = await fetch(`${url}?${params}`);
       if (!response.ok) {
         throw new Error(`API 오류: ${response.status}`);
       }
@@ -138,7 +152,7 @@ export default function MonitoringPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedAMR, viewMode]);
+  }, [selectedAMR, selectedSessionId, viewMode]);
 
   // 요약 통계 조회
   const fetchSummaryData = useCallback(async () => {
@@ -374,28 +388,40 @@ export default function MonitoringPage() {
         <CardContent className="p-4">
           <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
             {/* 필터 컨트롤 */}
-            <div className="flex flex-col sm:flex-row gap-4 flex-1">
-              <Select value={selectedAMR} onValueChange={setSelectedAMR}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="AMR 장비 선택" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">모든 AMR</SelectItem>
-                  {summaryData &&
-                    Object.keys(summaryData.byDevice).map((deviceId) => (
-                      <SelectItem key={deviceId} value={deviceId}>
-                        {deviceId}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
+            <div className="flex flex-col gap-4 flex-1">
+              <div className="flex flex-col sm:flex-row gap-4">
+                <Select value={selectedAMR} onValueChange={setSelectedAMR}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="디바이스 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">모든 디바이스</SelectItem>
+                    {summaryData &&
+                      Object.keys(summaryData.byDevice).map((deviceId) => (
+                        <SelectItem key={deviceId} value={deviceId}>
+                          {deviceId}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
 
-              <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">
-                  최근 24시간
-                </span>
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">
+                    {selectedSessionId ? "세션 기반 조회" : "최근 24시간"}
+                  </span>
+                </div>
               </div>
+
+              {/* 세션 선택기 추가 */}
+              {selectedAMR !== "all" && (
+                <SessionSelector
+                  deviceId={selectedAMR}
+                  selectedSessionId={selectedSessionId}
+                  onSessionSelect={setSelectedSessionId}
+                  showCreateButton={true}
+                />
+              )}
             </div>
 
             {/* 뷰 모드 전환 및 액션 버튼 */}

@@ -6,8 +6,7 @@ import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
   QrCode,
-  Clock,
-  Smartphone,
+  Activity,
   Settings,
   Menu,
   TestTube2,
@@ -23,19 +22,14 @@ const sidebarItems = [
     icon: LayoutDashboard,
   },
   {
-    title: "서버 연결",
+    title: "연결",
     href: "/connection",
     icon: QrCode,
   },
   {
-    title: "타임라인",
-    href: "/timeline",
-    icon: Clock,
-  },
-  {
-    title: "스마트폰",
-    href: "/smartphones",
-    icon: Smartphone,
+    title: "모니터링",
+    href: "/monitoring",
+    icon: Activity,
   },
   {
     title: "Mock 데이터",

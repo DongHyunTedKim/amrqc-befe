@@ -21,6 +21,7 @@ export type SensorType =
 export interface SensorData {
   id?: string;
   deviceId: string; // 스마트폰의 고유 ID (AMR ID가 아님!)
+  sessionId?: string; // 세션 ID
   sensorType: SensorType;
   timestamp: number; // Unix timestamp (ms)
   value: SensorValue;

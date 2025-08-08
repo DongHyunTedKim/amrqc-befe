@@ -3,6 +3,21 @@
  */
 
 /**
+ * Sessions 테이블 레코드
+ */
+export interface SessionRecord {
+  sessionId: string;
+  deviceId: string;
+  startTime: number; // Unix timestamp (ms)
+  endTime?: number; // Unix timestamp (ms), null if active
+  status: "active" | "completed" | "error" | "paused";
+  description?: string;
+  metadata?: string; // JSON string
+  createdAt: number;
+  updatedAt: number;
+}
+
+/**
  * SensorData 테이블 레코드
  */
 export interface SensorDataRecord {
@@ -12,6 +27,7 @@ export interface SensorDataRecord {
   sensorType: string;
   valueJson: string; // JSON string
   createdAt: number;
+  sessionId?: string; // 세션 ID
 }
 
 /**

@@ -36,6 +36,14 @@ class WebSocketServer {
       messagesFailed: 0,
     };
 
+    // 강제 해제 후 일정 시간 재접속 차단 관리 (기본 5초, ENV로 조정 가능)
+    this.blockedDevices = new Map(); // deviceId -> unblockTimestamp(ms)
+    const envBlock = parseInt(process.env.BLOCK_DURATION_MS || "", 10);
+    this.blockDurationMs =
+      Number.isFinite(envBlock) && envBlock > 0
+        ? envBlock
+        : options.blockDurationMs ?? 5_000; // 기본 5초
+
     // WebSocket 서버 생성
     this.wss = new WebSocket.Server({
       port: this.port,
@@ -75,6 +83,7 @@ class WebSocketServer {
       connectedAt: Date.now(),
       lastPong: Date.now(),
       deviceId: null, // 첫 메시지에서 설정됨
+      sessionId: null, // 세션 ID (디바이스 등록 시 생성)
       messageCount: 0,
     };
 
@@ -127,6 +136,7 @@ class WebSocketServer {
       }
 
       client.messageCount++;
+      client.lastMessageAt = Date.now();
 
       // 메시지 파싱
       let message;
@@ -150,6 +160,11 @@ class WebSocketServer {
 
         case "device_register":
           this.handleDeviceRegister(client, message);
+          break;
+
+        case "device_unregister":
+        case "device_disconnect":
+          this.handleDeviceUnregister(client, message);
           break;
 
         case "ping":
@@ -181,14 +196,42 @@ class WebSocketServer {
         timestamp: message.timestamp || Date.now(),
         sensorType: message.sensorType,
         value: message.value,
+        sessionId: client.sessionId || message.sessionId,
       };
+
+      // 차단된 디바이스인지 선확인
+      if (sensorData.deviceId && this.isDeviceBlocked(sensorData.deviceId)) {
+        this.sendError(
+          client.ws,
+          "DEVICE_BLOCKED",
+          "This device is temporarily blocked by administrator"
+        );
+        try {
+          client.ws.close(4001, "Temporarily blocked by administrator");
+        } catch (_) {}
+        return;
+      }
 
       // 디바이스 ID 설정 (첫 메시지에서)
       if (!client.deviceId && message.deviceId) {
         client.deviceId = message.deviceId;
-        logger.info(
-          `Device ID registered for client ${client.id}: ${message.deviceId}`
-        );
+
+        // 세션도 함께 생성
+        if (!client.sessionId) {
+          const sessionResult = this.db.getOrCreateActiveSession(
+            message.deviceId
+          );
+          if (sessionResult.success) {
+            client.sessionId = sessionResult.sessionId;
+            logger.info(
+              `Device ID and session registered for client ${client.id}: ${message.deviceId} (session: ${sessionResult.sessionId})`
+            );
+          }
+        } else {
+          logger.info(
+            `Device ID registered for client ${client.id}: ${message.deviceId}`
+          );
+        }
       }
 
       // 데이터 큐에 추가
@@ -229,14 +272,43 @@ class WebSocketServer {
 
   handleDeviceRegister(client, message) {
     if (message.deviceId && typeof message.deviceId === "string") {
+      // 차단된 디바이스는 등록 거부
+      if (this.isDeviceBlocked(message.deviceId)) {
+        this.sendError(
+          client.ws,
+          "DEVICE_BLOCKED",
+          "This device is temporarily blocked by administrator"
+        );
+        try {
+          client.ws.close(4001, "Temporarily blocked by administrator");
+        } catch (_) {}
+        return;
+      }
+
       client.deviceId = message.deviceId;
-      logger.info(
-        `✅ Device registered: ${message.deviceId} for client ${client.id}`
-      );
+
+      // 세션 생성 또는 기존 활성 세션 사용
+      const sessionResult = this.db.getOrCreateActiveSession(message.deviceId);
+      if (sessionResult.success) {
+        client.sessionId = sessionResult.sessionId;
+        logger.info(
+          `✅ Device registered: ${message.deviceId} for client ${
+            client.id
+          } with session ${sessionResult.sessionId} (${
+            sessionResult.isNew ? "new" : "existing"
+          })`
+        );
+      } else {
+        logger.error(
+          `Failed to create session for device ${message.deviceId}:`,
+          sessionResult.error
+        );
+      }
 
       this.sendMessage(client.ws, {
         type: "device_registered",
         deviceId: message.deviceId,
+        sessionId: client.sessionId,
         timestamp: Date.now(),
       });
     } else {
@@ -261,10 +333,49 @@ class WebSocketServer {
     });
   }
 
+  handleDeviceUnregister(client, message) {
+    try {
+      const deviceId = message.deviceId || client.deviceId;
+      logger.info(
+        `📴 Device unregister requested: ${deviceId || "unknown"} (client ${
+          client.id
+        })`
+      );
+
+      // 확인 응답
+      this.sendMessage(client.ws, {
+        type: "device_unregistered",
+        deviceId,
+        timestamp: Date.now(),
+      });
+
+      // 정상 종료
+      try {
+        client.ws.close(1000, "Client requested disconnect");
+      } catch (_) {}
+    } catch (error) {
+      logger.error("Device unregister handling failed:", error);
+      this.sendError(
+        client.ws,
+        "UNREGISTER_FAILED",
+        "Failed to unregister device"
+      );
+    }
+  }
+
   handleDisconnection(clientId, code, reason) {
     const client = this.clients.get(clientId);
     if (client) {
       const duration = Date.now() - client.connectedAt;
+
+      // 세션 종료 처리 (정상 종료인 경우에만)
+      if (client.sessionId && code === 1000) {
+        this.db.endSession(client.sessionId);
+        logger.info(
+          `Session ${client.sessionId} ended for device ${client.deviceId}`
+        );
+      }
+
       logger.info(
         `Client disconnected: ${clientId} (${
           client.deviceId || "unregistered"
@@ -349,15 +460,21 @@ class WebSocketServer {
 
   // 연결된 디바이스 목록 조회
   getConnectedDevices() {
+    // 등록이 완료된 디바이스만 노출
     return Array.from(this.clients.values())
-      .filter((client) => client.ws.readyState === WebSocket.OPEN) // 활성 연결만
+      .filter(
+        (client) =>
+          client.ws.readyState === WebSocket.OPEN &&
+          typeof client.deviceId === "string" &&
+          client.deviceId.trim().length > 0
+      )
       .map((client) => ({
         id: client.id,
-        deviceId: client.deviceId || `unregistered-${client.id}`, // deviceId가 없으면 임시 ID 생성
+        deviceId: client.deviceId,
         connectedAt: client.connectedAt,
         messageCount: client.messageCount,
         lastActivity: client.lastPong,
-        status: client.deviceId ? "registered" : "unregistered", // 등록 상태 구분
+        status: "connected",
       }));
   }
 
@@ -400,11 +517,12 @@ class WebSocketServer {
       return { success: false, error: "Device already disconnected" };
     }
 
-    // 클라이언트에게 강제 연결 해제 알림
+    // 클라이언트에게 강제 연결 해제 알림 (재시도 대기시간 안내 포함)
     this.sendMessage(client.ws, {
       type: "force_disconnect",
       reason: "Disconnected by administrator",
       timestamp: Date.now(),
+      retryAfterMs: this.blockDurationMs,
     });
 
     // 잠시 후 연결 종료 (클라이언트가 메시지를 받을 시간을 줌)
@@ -414,8 +532,30 @@ class WebSocketServer {
       }
     }, 100);
 
+    // 재연결 차단 등록
+    this.blockDevice(deviceId, this.blockDurationMs);
+    logger.info(
+      `Blocked device ${deviceId} for ${this.blockDurationMs}ms after force disconnect`
+    );
+
     logger.info(`Force disconnected device: ${deviceId}`);
     return { success: true, message: `Device ${deviceId} disconnected` };
+  }
+
+  // 디바이스 차단/해제 유틸리티
+  blockDevice(deviceId, durationMs = this.blockDurationMs) {
+    const until = Date.now() + Math.max(0, durationMs);
+    this.blockedDevices.set(deviceId, until);
+  }
+
+  isDeviceBlocked(deviceId) {
+    const until = this.blockedDevices.get(deviceId);
+    if (!until) return false;
+    if (Date.now() > until) {
+      this.blockedDevices.delete(deviceId);
+      return false;
+    }
+    return true;
   }
 
   // 서버 종료

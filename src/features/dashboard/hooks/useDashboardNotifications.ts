@@ -53,21 +53,25 @@ export function useDashboardNotifications(options: NotificationOptions = {}) {
       return !current || current.status === "disconnected";
     });
 
-    // 알림 표시
-    newDevices.forEach((device) => {
-      toast({
-        title: "디바이스 연결됨",
-        description: `${device.deviceId}가 연결되었습니다.`,
+    // 알림 표시 (unregistered-* 필터링)
+    newDevices
+      .filter((d) => !d.deviceId?.startsWith("unregistered-"))
+      .forEach((device) => {
+        toast({
+          title: "디바이스 연결됨",
+          description: `${device.deviceId}가 연결되었습니다.`,
+        });
       });
-    });
 
-    disconnectedDevices.forEach((device) => {
-      toast({
-        title: "디바이스 연결 해제",
-        description: `${device.deviceId}의 연결이 해제되었습니다.`,
-        variant: "destructive",
+    disconnectedDevices
+      .filter((d) => !d.deviceId?.startsWith("unregistered-"))
+      .forEach((device) => {
+        toast({
+          title: "디바이스 연결 해제",
+          description: `${device.deviceId}의 연결이 해제되었습니다.`,
+          variant: "destructive",
+        });
       });
-    });
 
     prevDevicesRef.current = currentDevices;
   }, [connectedDevices, opts.enabled, opts.showDeviceConnections, toast]);
