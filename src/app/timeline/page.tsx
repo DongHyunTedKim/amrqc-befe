@@ -83,7 +83,7 @@ export default function TimelinePage() {
     start: number;
     end: number;
   } | null>(null);
-  const [realtimeEnabled, setRealtimeEnabled] = useState(true);
+  const [realtimeEnabled, setRealtimeEnabled] = useState(false);
 
   // API 기본 URL
   const API_BASE = "http://localhost:8000/api";
@@ -281,6 +281,7 @@ export default function TimelinePage() {
       temperature: "bg-red-100 text-red-800",
       battery: "bg-purple-100 text-purple-800",
       magnetometer: "bg-indigo-100 text-indigo-800",
+      microphone: "bg-orange-100 text-orange-800",
     };
     return colors[sensorType] || "bg-gray-100 text-gray-800";
   };
@@ -299,7 +300,15 @@ export default function TimelinePage() {
       case "temperature":
         return `${value.value?.toFixed(1)}°C`;
       case "battery":
-        return `${value.level}% ${value.isCharging ? "⚡" : ""}`;
+        const batteryInfo = [`${value.level}%`];
+        if (value.temperature)
+          batteryInfo.push(`${value.temperature.toFixed(1)}°C`);
+        if (value.voltage) batteryInfo.push(`${value.voltage.toFixed(0)}mV`);
+        return batteryInfo.join(" ");
+      case "microphone":
+        return `${value.decibel?.toFixed(
+          1
+        )}dB (max: ${value.maxDecibel?.toFixed(1)}dB)`;
       default:
         return JSON.stringify(value);
     }

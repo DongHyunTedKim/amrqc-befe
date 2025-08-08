@@ -235,11 +235,37 @@ class MockDataGenerator {
     logger.info("─".repeat(80));
   }
 
-  // 데이터베이스 초기화 (기존 데이터 삭제)
+  // 데이터베이스 완전 초기화 (기존 데이터 삭제 + 파일 크기 축소)
   clearDatabase() {
     logger.warn("⚠️  Clearing all sensor data from database...");
-    this.db.db.prepare("DELETE FROM SensorData").run();
-    logger.info("✅ Database cleared");
+
+    try {
+      // 1. 모든 데이터 삭제
+      const deleteResult = this.db.db.prepare("DELETE FROM SensorData").run();
+      logger.info(
+        `🗑️  Deleted ${deleteResult.changes} records from SensorData table`
+      );
+
+      // 2. 데이터베이스 파일 크기 축소 (VACUUM)
+      logger.info("🔧 Compacting database file...");
+      this.db.db.exec("VACUUM");
+
+      // 3. 통계 정보 재수집
+      this.db.db.exec("ANALYZE");
+
+      // 4. WAL 체크포인트 (WAL 파일을 메인 DB로 병합)
+      this.db.db.exec("PRAGMA wal_checkpoint(FULL)");
+
+      logger.info("✅ Database cleared and compacted successfully");
+
+      return {
+        deletedRecords: deleteResult.changes,
+        success: true,
+      };
+    } catch (error) {
+      logger.error("❌ Error during database clearing:", error);
+      throw error;
+    }
   }
 
   close() {

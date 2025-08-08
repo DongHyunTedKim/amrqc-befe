@@ -10,6 +10,8 @@ import {
   Smartphone,
   Settings,
   Menu,
+  TestTube2,
+  Database,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -34,6 +36,16 @@ const sidebarItems = [
     title: "스마트폰",
     href: "/smartphones",
     icon: Smartphone,
+  },
+  {
+    title: "Mock 데이터",
+    href: "/mock",
+    icon: TestTube2,
+  },
+  {
+    title: "데이터베이스",
+    href: "/database",
+    icon: Database,
   },
   {
     title: "설정",

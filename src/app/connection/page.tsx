@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Copy, RefreshCw, Wifi, Smartphone, Activity } from "lucide-react";
+import { Copy, RefreshCw, Wifi, Smartphone, Activity, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useServerInfo } from "@/hooks/useServerInfo";
 import { useConnectedDevices } from "@/hooks/useConnectedDevices";
@@ -27,6 +27,42 @@ export default function ConnectionPage() {
     toast({
       description: `${label}이(가) 클립보드에 복사되었습니다.`,
     });
+  };
+
+  // 디바이스 강제 연결 해제
+  const disconnectDevice = async (deviceId: string) => {
+    try {
+      const baseUrl =
+        process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const response = await fetch(`${baseUrl}/api/server/disconnect-device`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ deviceId }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast({
+          title: "연결 해제 성공",
+          description: `${deviceId} 디바이스의 연결이 해제되었습니다.`,
+        });
+      } else {
+        throw new Error(result.error || "연결 해제에 실패했습니다.");
+      }
+    } catch (error) {
+      console.error("Device disconnect error:", error);
+      toast({
+        title: "연결 해제 실패",
+        description:
+          error instanceof Error
+            ? error.message
+            : "알 수 없는 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    }
   };
 
   const formatUptime = (ms: number) => {
@@ -220,7 +256,7 @@ export default function ConnectionPage() {
                 <Card key={device.id} className="relative">
                   <CardContent className="pt-6">
                     <div className="flex items-start justify-between">
-                      <div className="space-y-1">
+                      <div className="space-y-1 flex-1">
                         <div className="flex items-center gap-2">
                           <Smartphone className="h-4 w-4" />
                           <span className="font-medium text-sm">
@@ -234,13 +270,24 @@ export default function ConnectionPage() {
                           수신 메시지: {device.messageCount.toLocaleString()}개
                         </p>
                       </div>
-                      <Activity
-                        className={`h-4 w-4 ${
-                          device.status === "connected"
-                            ? "text-green-500"
-                            : "text-gray-400"
-                        }`}
-                      />
+                      <div className="flex items-center gap-2">
+                        <Activity
+                          className={`h-4 w-4 ${
+                            device.status === "connected"
+                              ? "text-green-500"
+                              : "text-gray-400"
+                          }`}
+                        />
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => disconnectDevice(device.deviceId)}
+                          className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                          title="연결 해제"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>

@@ -133,4 +133,43 @@ router.get("/devices", (req, res) => {
   });
 });
 
+/**
+ * POST /api/server/disconnect-device
+ * 특정 디바이스 강제 연결 해제
+ */
+router.post("/disconnect-device", (req, res) => {
+  const { deviceId } = req.body;
+
+  if (!deviceId) {
+    return res.status(400).json({
+      success: false,
+      error: "deviceId is required",
+    });
+  }
+
+  const server = req.app.locals.amrServer;
+
+  if (!server || !server.wsServer) {
+    return res.status(500).json({
+      success: false,
+      error: "WebSocket server not available",
+    });
+  }
+
+  // 디바이스 연결 해제 실행
+  const result = server.wsServer.disconnectDevice(deviceId);
+
+  if (result.success) {
+    res.json({
+      success: true,
+      message: result.message,
+    });
+  } else {
+    res.status(404).json({
+      success: false,
+      error: result.error,
+    });
+  }
+});
+
 module.exports = router;

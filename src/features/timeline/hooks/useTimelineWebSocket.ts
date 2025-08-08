@@ -38,7 +38,7 @@ interface WebSocketState {
 const DEFAULT_OPTIONS: Required<
   Omit<WebSocketOptions, "onNewSensorData" | "onConnectionChange">
 > = {
-  autoConnect: true,
+  autoConnect: false, // 기본적으로 자동 연결 비활성화
   reconnectInterval: 3000,
   maxReconnectAttempts: 5,
 };

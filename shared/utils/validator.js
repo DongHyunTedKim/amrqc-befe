@@ -47,9 +47,12 @@ const validators = {
     if (!data.value || typeof data.value !== "object") return false;
     return (
       typeof data.value.level === "number" &&
-      typeof data.value.isCharging === "boolean" &&
       data.value.level >= 0 &&
-      data.value.level <= 100
+      data.value.level <= 100 &&
+      (data.value.temperature === undefined ||
+        typeof data.value.temperature === "number") &&
+      (data.value.voltage === undefined ||
+        typeof data.value.voltage === "number")
     );
   },
 
@@ -59,6 +62,17 @@ const validators = {
       typeof data.value.x === "number" &&
       typeof data.value.y === "number" &&
       typeof data.value.z === "number"
+    );
+  },
+
+  microphone: (data) => {
+    if (!data.value || typeof data.value !== "object") return false;
+    return (
+      typeof data.value.decibel === "number" &&
+      typeof data.value.maxDecibel === "number" &&
+      data.value.decibel >= 0 &&
+      data.value.maxDecibel >= 0 &&
+      data.value.decibel <= data.value.maxDecibel
     );
   },
 };

@@ -13,19 +13,18 @@ import {
   Database,
   Smartphone,
   Timer,
-  Wifi,
-  WifiOff,
   RefreshCw,
   AlertCircle,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { useDashboardStore } from "@/features/dashboard/stores/dashboardStore";
 import { useDashboardPolling } from "@/features/dashboard/hooks/useDashboardPolling";
 import { useDashboardWebSocket } from "@/features/dashboard/hooks/useDashboardWebSocket";
 import { useDashboardNotifications } from "@/features/dashboard/hooks/useDashboardNotifications";
 import { RealtimeChart } from "@/features/dashboard/components/RealtimeChart";
 import NoSSR from "@/components/NoSSR";
+import { useToast } from "@/hooks/use-toast";
 
 export default function DashboardPage() {
   const {
@@ -35,9 +34,9 @@ export default function DashboardPage() {
     realtimeStats,
     loading,
     errors,
-    wsConnected,
-    wsReconnecting,
   } = useDashboardStore();
+
+  const { toast } = useToast();
 
   // 실시간 차트 데이터
   const [chartData, setChartData] = useState<number[]>([]);
@@ -45,9 +44,10 @@ export default function DashboardPage() {
   // 폴링 시작
   useDashboardPolling({ enabled: true });
 
-  // WebSocket 연결
-  const { sendMessage } = useDashboardWebSocket({
-    autoConnect: true,
+  // WebSocket 연결 (대시보드에서는 자동 연결하지 않음)
+  // Mock 데이터는 /mock 페이지에서 관리
+  useDashboardWebSocket({
+    autoConnect: false, // 자동 연결 비활성화
     onMessage: (message) => {
       // 추가 메시지 처리
       console.log("Dashboard received message:", message);
@@ -98,6 +98,45 @@ export default function DashboardPage() {
     fetchConnectedDevices();
   };
 
+  // 디바이스 강제 연결 해제
+  const disconnectDevice = async (deviceId: string) => {
+    try {
+      const baseUrl =
+        process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const response = await fetch(`${baseUrl}/api/server/disconnect-device`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ deviceId }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast({
+          title: "연결 해제 성공",
+          description: `${deviceId} 디바이스의 연결이 해제되었습니다.`,
+        });
+        // 디바이스 목록 새로고침
+        const { fetchConnectedDevices } = useDashboardStore.getState();
+        fetchConnectedDevices();
+      } else {
+        throw new Error(result.error || "연결 해제에 실패했습니다.");
+      }
+    } catch (error) {
+      console.error("Device disconnect error:", error);
+      toast({
+        title: "연결 해제 실패",
+        description:
+          error instanceof Error
+            ? error.message
+            : "알 수 없는 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* 페이지 헤더 */}
@@ -109,36 +148,6 @@ export default function DashboardPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {/* WebSocket 연결 상태 */}
-          <NoSSR>
-            <Badge
-              variant={
-                wsConnected
-                  ? "default"
-                  : wsReconnecting
-                  ? "secondary"
-                  : "destructive"
-              }
-            >
-              {wsConnected ? (
-                <>
-                  <Wifi className="mr-1 h-3 w-3" />
-                  실시간 연결됨
-                </>
-              ) : wsReconnecting ? (
-                <>
-                  <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
-                  재연결 중...
-                </>
-              ) : (
-                <>
-                  <WifiOff className="mr-1 h-3 w-3" />
-                  연결 끊김
-                </>
-              )}
-            </Badge>
-          </NoSSR>
-
           {/* 새로고침 버튼 */}
           <Button
             variant="outline"
@@ -276,9 +285,20 @@ export default function DashboardPage() {
                         {device.deviceId}
                       </span>
                     </div>
-                    <span className="text-xs text-muted-foreground">
-                      {device.messageCount} 메시지
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">
+                        {device.messageCount} 메시지
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => disconnectDevice(device.deviceId)}
+                        className="h-6 w-6 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                        title="연결 해제"
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -286,53 +306,6 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
-
-      {/* 빠른 액션 섹션 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>빠른 액션</CardTitle>
-          <CardDescription>
-            자주 사용하는 기능들에 빠르게 접근하세요.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                // Mock 데이터 생성 요청
-                sendMessage({
-                  type: "request_mock_data",
-                  data: { count: 10 },
-                });
-              }}
-            >
-              테스트 데이터 생성
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                // 데이터 다운로드 페이지로 이동
-                window.location.href = "/timeline";
-              }}
-            >
-              데이터 다운로드
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                // 서버 연결 페이지로 이동
-                window.location.href = "/connection";
-              }}
-            >
-              QR 코드 보기
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }

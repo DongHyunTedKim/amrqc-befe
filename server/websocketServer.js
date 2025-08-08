@@ -83,7 +83,7 @@ class WebSocketServer {
     this.stats.currentConnections++;
 
     logger.info(
-      `Client connected: ${clientId} from ${request.socket.remoteAddress}`
+      `📱 Client connected: ${clientId} from ${request.socket.remoteAddress} - Waiting for device registration...`
     );
 
     // 연결 이벤트 핸들러
@@ -111,6 +111,8 @@ class WebSocketServer {
       type: "welcome",
       clientId: clientId,
       timestamp: Date.now(),
+      message:
+        "Connection established. Please send device_register message to identify your device.",
     });
   }
 
@@ -229,7 +231,7 @@ class WebSocketServer {
     if (message.deviceId && typeof message.deviceId === "string") {
       client.deviceId = message.deviceId;
       logger.info(
-        `Device registered: ${message.deviceId} for client ${client.id}`
+        `✅ Device registered: ${message.deviceId} for client ${client.id}`
       );
 
       this.sendMessage(client.ws, {
@@ -238,6 +240,11 @@ class WebSocketServer {
         timestamp: Date.now(),
       });
     } else {
+      logger.warn(
+        `❌ Invalid device registration attempt from client ${
+          client.id
+        }: ${JSON.stringify(message)}`
+      );
       this.sendError(
         client.ws,
         "INVALID_DEVICE_ID",
@@ -343,17 +350,14 @@ class WebSocketServer {
   // 연결된 디바이스 목록 조회
   getConnectedDevices() {
     return Array.from(this.clients.values())
-      .filter((client) => client.deviceId) // deviceId가 설정된 클라이언트만
+      .filter((client) => client.ws.readyState === WebSocket.OPEN) // 활성 연결만
       .map((client) => ({
         id: client.id,
-        deviceId: client.deviceId,
+        deviceId: client.deviceId || `unregistered-${client.id}`, // deviceId가 없으면 임시 ID 생성
         connectedAt: client.connectedAt,
         messageCount: client.messageCount,
         lastActivity: client.lastPong,
-        status:
-          client.ws.readyState === WebSocket.OPEN
-            ? "connected"
-            : "disconnected",
+        status: client.deviceId ? "registered" : "unregistered", // 등록 상태 구분
       }));
   }
 
@@ -378,6 +382,40 @@ class WebSocketServer {
     logger.info(
       `Broadcasted sensor data: ${sensorData.sensorType} from ${sensorData.deviceId}`
     );
+  }
+
+  // 특정 디바이스 강제 연결 해제
+  disconnectDevice(deviceId) {
+    const client = Array.from(this.clients.values()).find(
+      (c) => c.deviceId === deviceId
+    );
+
+    if (!client) {
+      logger.warn(`Device not found for disconnect: ${deviceId}`);
+      return { success: false, error: "Device not found" };
+    }
+
+    if (client.ws.readyState !== WebSocket.OPEN) {
+      logger.warn(`Device already disconnected: ${deviceId}`);
+      return { success: false, error: "Device already disconnected" };
+    }
+
+    // 클라이언트에게 강제 연결 해제 알림
+    this.sendMessage(client.ws, {
+      type: "force_disconnect",
+      reason: "Disconnected by administrator",
+      timestamp: Date.now(),
+    });
+
+    // 잠시 후 연결 종료 (클라이언트가 메시지를 받을 시간을 줌)
+    setTimeout(() => {
+      if (client.ws.readyState === WebSocket.OPEN) {
+        client.ws.close(1000, "Force disconnect by administrator");
+      }
+    }, 100);
+
+    logger.info(`Force disconnected device: ${deviceId}`);
+    return { success: true, message: `Device ${deviceId} disconnected` };
   }
 
   // 서버 종료

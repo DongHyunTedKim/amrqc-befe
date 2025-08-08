@@ -38,6 +38,7 @@ const SENSOR_COLORS: Record<string, string> = {
   temperature: "rgb(239, 68, 68)", // red
   battery: "rgb(168, 85, 247)", // purple
   magnetometer: "rgb(99, 102, 241)", // indigo
+  microphone: "rgb(245, 101, 101)", // coral/orange-red
 };
 
 export function TimelineChart({
@@ -86,6 +87,8 @@ export function TimelineChart({
             return item.value.celsius || item.value.value || 0;
           case "battery":
             return item.value.level || 0;
+          case "microphone":
+            return item.value.decibel || 0;
           case "gps":
             // GPS는 속도나 고도 등을 표시할 수 있음
             return item.value.speed || 0;
@@ -122,12 +125,14 @@ export function TimelineChart({
     const ctx = canvasRef.current.getContext("2d");
     if (!ctx) return;
 
-    // 기존 차트 제거
-    if (chartRef.current) {
-      chartRef.current.destroy();
-    }
-
     const chartData = prepareChartData();
+
+    // 차트가 이미 존재하면 데이터만 업데이트
+    if (chartRef.current) {
+      chartRef.current.data = chartData;
+      chartRef.current.update("none"); // 애니메이션 없이 업데이트
+      return;
+    }
 
     const config: ChartConfiguration = {
       type: "line" as ChartType,
@@ -135,6 +140,9 @@ export function TimelineChart({
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        animation: {
+          duration: 0, // 애니메이션 비활성화 (실시간 업데이트를 위해)
+        },
         interaction: {
           mode: "index",
           intersect: false,
@@ -249,7 +257,16 @@ export function TimelineChart({
         chartRef.current = null;
       }
     };
-  }, [data, sensorTypes, onRangeSelect, prepareChartData]);
+  }, [sensorTypes, onRangeSelect]); // data 의존성 제거하여 데이터 변경시 재생성 방지
+
+  // 데이터만 변경될 때 차트 업데이트
+  useEffect(() => {
+    if (chartRef.current) {
+      const chartData = prepareChartData();
+      chartRef.current.data = chartData;
+      chartRef.current.update("none"); // 애니메이션 없이 업데이트
+    }
+  }, [data, prepareChartData]);
 
   // 차트 리셋 버튼
   const handleResetZoom = () => {

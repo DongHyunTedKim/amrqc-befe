@@ -74,17 +74,26 @@ router.post("/generate", async (req, res) => {
 
 /**
  * DELETE /api/mock/clear
- * 모든 센서 데이터 삭제
+ * 모든 센서 데이터 삭제 (VACUUM 포함)
  */
 router.delete("/clear", async (req, res) => {
   try {
     const generator = new MockDataGenerator();
-    generator.clearDatabase();
+    const result = generator.clearDatabase();
     generator.close();
 
     res.json({
       success: true,
-      message: "All sensor data cleared successfully",
+      message: "All sensor data cleared and database compacted successfully",
+      data: {
+        deletedRecords: result.deletedRecords,
+        operations: [
+          "데이터 레코드 삭제",
+          "데이터베이스 파일 압축 (VACUUM)",
+          "통계 정보 재수집 (ANALYZE)",
+          "WAL 파일 체크포인트",
+        ],
+      },
     });
   } catch (error) {
     console.error("Error clearing database:", error);

@@ -4,7 +4,6 @@ import "./globals.css";
 import Providers from "./providers";
 import { MainLayout } from "@/components/layout";
 import { Toaster } from "@/components/ui/toaster";
-import MockDataFloatingButton from "@/components/MockDataFloatingButton";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -32,7 +31,6 @@ export default function RootLayout({
         <Providers>
           <MainLayout>{children}</MainLayout>
           <Toaster />
-          <MockDataFloatingButton />
         </Providers>
       </body>
     </html>
