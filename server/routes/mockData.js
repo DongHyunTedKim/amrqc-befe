@@ -7,20 +7,37 @@ const MockDataGenerator = require("../mockDataGenerator");
  * Mock 데이터 생성
  *
  * Body Parameters:
- * - days: 생성할 데이터 기간 (일 단위, 기본값: 1)
+ * - minutes: 생성할 데이터 기간 (분 단위, 기본값: 10) 또는 days (호환성)
  * - interval: 데이터 생성 간격 (ms, 기본값: 1000)
  * - devices: 활성 디바이스 수 (기본값: 3)
  */
 router.post("/generate", async (req, res) => {
   try {
-    const { days = 1, interval = 1000, devices = 3 } = req.body;
+    // 분 단위와 일 단위 모두 지원 (호환성)
+    let { minutes, days, interval = 1000, devices = 3 } = req.body;
 
-    // 파라미터 검증
-    if (days < 0.1 || days > 30) {
-      return res.status(400).json({
-        success: false,
-        error: "days must be between 0.1 and 30",
-      });
+    // 분 단위가 있으면 우선 사용, 없으면 days를 분으로 변환
+    if (minutes !== undefined) {
+      // 분 단위 파라미터 검증
+      if (minutes < 1 || minutes > 43200) {
+        // 최대 30일 = 43200분
+        return res.status(400).json({
+          success: false,
+          error: "minutes must be between 1 and 43200 (30 days)",
+        });
+      }
+      // 분을 일로 변환하여 기존 로직 재사용
+      days = minutes / (24 * 60);
+    } else {
+      // 기존 days 파라미터 사용 (하위 호환성)
+      days = days || 1;
+      minutes = days * 24 * 60;
+      if (days < 0.1 || days > 30) {
+        return res.status(400).json({
+          success: false,
+          error: "days must be between 0.1 and 30",
+        });
+      }
     }
 
     if (interval < 100 || interval > 60000) {
@@ -56,7 +73,8 @@ router.post("/generate", async (req, res) => {
       success: true,
       message: `Successfully generated ${mockData.length} data points`,
       details: {
-        days,
+        minutes: Math.round(minutes),
+        days: Number(days.toFixed(3)),
         interval,
         devices,
         totalRecords: mockData.length,

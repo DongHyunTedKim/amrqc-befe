@@ -40,7 +40,7 @@ interface MockDevice {
 export default function MockPage() {
   const [mockDevices, setMockDevices] = useState<MockDevice[]>([]);
   const [newDeviceId, setNewDeviceId] = useState("");
-  const [days, setDays] = useState("1");
+  const [minutes, setMinutes] = useState("10");
   const [interval, setInterval] = useState("1000");
   const [deviceCount, setDeviceCount] = useState("3");
   const [generating, setGenerating] = useState(false);
@@ -185,7 +185,7 @@ export default function MockPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          days: parseFloat(days),
+          minutes: parseFloat(minutes), // 분 단위로 직접 전송
           interval: parseInt(interval),
           devices: parseInt(deviceCount),
         }),
@@ -517,15 +517,15 @@ export default function MockPage() {
             <div className="grid gap-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="days">기간 (일)</Label>
+                  <Label htmlFor="minutes">기간 (분)</Label>
                   <Input
-                    id="days"
+                    id="minutes"
                     type="number"
-                    value={days}
-                    onChange={(e) => setDays(e.target.value)}
-                    min="0.1"
-                    max="30"
-                    step="0.1"
+                    value={minutes}
+                    onChange={(e) => setMinutes(e.target.value)}
+                    min="1"
+                    max="1440"
+                    step="1"
                   />
                 </div>
                 <div className="space-y-2">
@@ -556,7 +556,7 @@ export default function MockPage() {
               <div className="text-sm text-muted-foreground">
                 약{" "}
                 {Math.floor(
-                  ((parseFloat(days) * 24 * 3600 * 1000) / parseInt(interval)) *
+                  ((parseFloat(minutes) * 60 * 1000) / parseInt(interval)) *
                     parseInt(deviceCount) *
                     0.7
                 ).toLocaleString()}{" "}
