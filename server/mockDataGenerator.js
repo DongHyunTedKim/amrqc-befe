@@ -27,6 +27,8 @@ class MockDataGenerator {
       "battery",
       "magnetometer",
     ];
+    // 세션 생성을 위한 디바이스별 세션 ID 맵
+    this.deviceSessions = new Map();
   }
 
   // 랜덤 센서 값 생성
@@ -79,6 +81,11 @@ class MockDataGenerator {
     }
   }
 
+  // UUID 생성 함수
+  generateSessionId() {
+    return `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  }
+
   // 특정 기간 동안의 Mock 데이터 생성
   generateMockData(options = {}) {
     const {
@@ -90,6 +97,28 @@ class MockDataGenerator {
 
     const activeDevices = this.devices.slice(0, devicesCount);
     const dataPoints = [];
+
+    // 각 디바이스별로 세션 생성
+    activeDevices.forEach((deviceId) => {
+      const sessionId = this.generateSessionId();
+      this.deviceSessions.set(deviceId, sessionId);
+
+      // 세션 생성
+      try {
+        this.db.statements.createSession.run(
+          sessionId,
+          deviceId,
+          startDate.getTime(),
+          "active",
+          `Mock data session for ${deviceId}`
+        );
+        logger.info(`Created session ${sessionId} for device ${deviceId}`);
+      } catch (error) {
+        logger.warn(
+          `Session creation failed for ${deviceId}: ${error.message}`
+        );
+      }
+    });
 
     logger.info(
       `Generating mock data from ${startDate.toISOString()} to ${endDate.toISOString()}`
@@ -114,6 +143,7 @@ class MockDataGenerator {
             sensorType,
             timestamp: currentTime,
             value: this.generateSensorValue(sensorType),
+            sessionId: this.deviceSessions.get(deviceId), // 세션 ID 추가
             metadata: {
               accuracy: Math.random() * 10,
               source: "mock-generator",
@@ -161,7 +191,8 @@ class MockDataGenerator {
               data.deviceId,
               data.timestamp,
               data.sensorType,
-              JSON.stringify(data.value)
+              JSON.stringify(data.value),
+              data.sessionId || null // sessionId 파라미터 추가
             );
           });
         })();
@@ -171,6 +202,23 @@ class MockDataGenerator {
       }
 
       logger.info("✅ Mock data saved successfully!");
+
+      // 세션을 완료 상태로 업데이트
+      this.deviceSessions.forEach((sessionId, deviceId) => {
+        try {
+          this.db.statements.updateSession.run(
+            Date.now(), // endTime
+            "completed", // status
+            Date.now(), // updatedAt
+            sessionId
+          );
+          logger.info(`Session ${sessionId} for device ${deviceId} completed`);
+        } catch (error) {
+          logger.warn(
+            `Failed to update session ${sessionId}: ${error.message}`
+          );
+        }
+      });
 
       // 통계 출력
       this.printStatistics();
