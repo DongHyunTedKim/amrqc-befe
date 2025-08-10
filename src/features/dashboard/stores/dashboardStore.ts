@@ -70,10 +70,13 @@ interface DataSummary {
 
 // 연결된 디바이스 타입
 interface ConnectedDevice {
+  id: string;
   deviceId: string;
   connectedAt: number;
-  lastSeen: number;
+  lastActivity: number;
   messageCount: number;
+  sessionId?: string | null;
+  hasActiveSession: boolean;
   status: "connected" | "disconnected";
 }
 

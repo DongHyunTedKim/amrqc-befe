@@ -74,7 +74,7 @@ class DatabaseManager {
           metadata TEXT,
           createdAt INTEGER DEFAULT (strftime('%s', 'now') * 1000),
           updatedAt INTEGER DEFAULT (strftime('%s', 'now') * 1000),
-          CONSTRAINT chk_session_status CHECK (status IN ('active', 'completed', 'error', 'paused'))
+          CONSTRAINT chk_session_status CHECK (status IN ('active', 'completed', 'error', 'paused', 'replaced', 'aborted'))
         );
       `);
 

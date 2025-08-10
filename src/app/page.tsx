@@ -8,14 +8,28 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Smartphone, Timer, RefreshCw, AlertCircle, X } from "lucide-react";
+import {
+  Smartphone,
+  Timer,
+  RefreshCw,
+  Activity,
+  TrendingUp,
+  Play,
+  Square,
+  Clock,
+  Wifi,
+  X,
+  Server,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { useDashboardStore } from "@/features/dashboard/stores/dashboardStore";
 import { useDashboardPolling } from "@/features/dashboard/hooks/useDashboardPolling";
 import { useDashboardWebSocket } from "@/features/dashboard/hooks/useDashboardWebSocket";
 import { useDashboardNotifications } from "@/features/dashboard/hooks/useDashboardNotifications";
 // 실시간 차트 및 NoSSR 컴포넌트 제거 (요구사항에 따라 대시보드에서 미사용)
 import { useToast } from "@/hooks/use-toast";
+import { useServerInfo } from "@/hooks/useServerInfo";
 
 export default function DashboardPage() {
   const {
@@ -28,6 +42,7 @@ export default function DashboardPage() {
   } = useDashboardStore();
 
   const { toast } = useToast();
+  const { serverInfo } = useServerInfo();
 
   // 실시간 차트 제거로 관련 상태 제거
 
@@ -81,6 +96,15 @@ export default function DashboardPage() {
     fetchConnectedDevices();
   };
 
+  // 시간 포맷팅 헬퍼
+  const formatTime = (timestamp: number) => {
+    return new Date(timestamp).toLocaleTimeString("ko-KR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  };
+
   // 디바이스 강제 연결 해제
   const disconnectDevice = async (deviceId: string) => {
     try {
@@ -101,9 +125,6 @@ export default function DashboardPage() {
           title: "연결 해제 성공",
           description: `${deviceId} 디바이스의 연결이 해제되었습니다.`,
         });
-        // 디바이스 목록 새로고침
-        const { fetchConnectedDevices } = useDashboardStore.getState();
-        fetchConnectedDevices();
       } else {
         throw new Error(result.error || "연결 해제에 실패했습니다.");
       }
@@ -147,8 +168,28 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 상태 카드 그리드: 요구사항 반영 - 불필요 항목 제거, 디바이스 카드로 병합 */}
+      {/* 상태 카드 그리드 */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        {/* 서버 연결 정보 */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">서버 연결</CardTitle>
+            <Server className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {serverStatus?.websocket?.connected ? (
+                <span className="text-green-600">온라인</span>
+              ) : (
+                <span className="text-red-600">오프라인</span>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {serverInfo?.network.primaryIP || "127.0.0.1"}:
+              {serverInfo?.ports.websocket || 8001}
+            </p>
+          </CardContent>
+        </Card>
         {/* 서버 가동 시간 */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -163,72 +204,211 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* 연결된 디바이스 (대수 + 목록 병합) */}
-        <Card className="md:col-span-2 lg:col-span-3">
+        {/* 활성 디바이스 수 */}
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <div className="flex items-center gap-2">
-              <Smartphone className="h-4 w-4 text-muted-foreground" />
-              <CardTitle className="text-sm font-medium">
-                연결된 디바이스
-              </CardTitle>
-            </div>
+            <CardTitle className="text-sm font-medium">활성 디바이스</CardTitle>
+            <Smartphone className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            {loading.devices ? (
-              <div className="text-sm text-muted-foreground">로딩 중...</div>
-            ) : errors.devices ? (
-              <div className="flex items-center text-sm text-destructive">
-                <AlertCircle className="mr-2 h-4 w-4" />
-                {errors.devices}
-              </div>
-            ) : connectedDevices.filter(
-                (d) => !d.deviceId?.startsWith("unregistered-")
-              ).length === 0 ? (
-              <div className="text-sm text-muted-foreground">
-                연결된 디바이스가 없습니다.
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {connectedDevices
-                  .filter((d) => !d.deviceId?.startsWith("unregistered-"))
-                  .map((device) => (
-                    <div
-                      key={device.deviceId}
-                      className="flex items-center justify-between rounded-lg border p-2"
-                    >
-                      <div className="flex items-center gap-2">
-                        <div
-                          className={`h-2 w-2 rounded-full ${
-                            device.status === "connected"
-                              ? "bg-green-500"
-                              : "bg-gray-300"
-                          }`}
-                        />
-                        <span className="text-sm font-medium">
-                          {device.deviceId}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground">
-                          {device.messageCount} 메시지
-                        </span>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => disconnectDevice(device.deviceId)}
-                          className="h-6 w-6 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
-                          title="연결 해제"
-                        >
-                          <X className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            )}
+            <div className="text-2xl font-bold">
+              {loading.devices
+                ? "..."
+                : connectedDevices.filter(
+                    (d) => !d.deviceId?.startsWith("unregistered-")
+                  ).length}
+            </div>
+            <p className="text-xs text-muted-foreground">대 연결됨</p>
+          </CardContent>
+        </Card>
+
+        {/* 메시지 수신 통계 */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">메시지 수신</CardTitle>
+            <Activity className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {loading.serverStatus
+                ? "..."
+                : (
+                    serverStatus?.websocket?.messagesReceived || 0
+                  ).toLocaleString()}
+            </div>
+            <p className="text-xs text-muted-foreground">총 수신된 메시지</p>
           </CardContent>
         </Card>
       </div>
+
+      {/* 연결된 스마트폰 목록 */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <span>연결된 스마트폰</span>
+            <Badge variant="secondary" className="font-semibold">
+              {
+                connectedDevices.filter(
+                  (d) => !d.deviceId?.startsWith("unregistered-")
+                ).length
+              }
+              대 연결됨
+            </Badge>
+          </CardTitle>
+          <CardDescription>
+            현재 서버에 연결된 스마트폰 목록과 실시간 상태입니다.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {connectedDevices.filter(
+            (d) => !d.deviceId?.startsWith("unregistered-")
+          ).length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <div className="relative mx-auto w-16 h-16 mb-4">
+                <Smartphone className="h-8 w-8 mx-auto opacity-30" />
+                <div className="absolute -top-1 -right-1 w-4 h-4 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center">
+                  <X className="h-2 w-2 text-red-500" />
+                </div>
+              </div>
+              <h3 className="font-medium mb-2">연결된 스마트폰이 없습니다</h3>
+              <p className="text-sm">
+                연결 페이지에서 QR 코드를 스캔하여 디바이스를 연결하세요.
+              </p>
+            </div>
+          ) : (
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+              {connectedDevices
+                .filter((d) => !d.deviceId?.startsWith("unregistered-"))
+                .map((device) => (
+                  <Card
+                    key={device.id}
+                    className="relative border hover:border-primary/30 transition-colors"
+                  >
+                    <CardContent className="pt-4">
+                      <div className="space-y-3">
+                        {/* 디바이스 헤더 */}
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-2 flex-1">
+                            <div className="relative">
+                              <Smartphone className="h-4 w-4 text-blue-600" />
+                              <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                            </div>
+                            <div>
+                              <h4 className="font-medium text-sm">
+                                {device.deviceId}
+                              </h4>
+                              <p className="text-xs text-muted-foreground">
+                                ID: {device.id.slice(-6)}
+                              </p>
+                            </div>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => disconnectDevice(device.deviceId)}
+                            className="h-6 w-6 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950"
+                            title="연결 해제"
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+
+                        {/* 세션 상태 */}
+                        <div className="flex items-center gap-2 p-2 rounded-md bg-muted/30">
+                          {device.hasActiveSession ? (
+                            <>
+                              <Play className="h-3 w-3 text-green-600" />
+                              <span className="text-xs font-medium text-green-700 dark:text-green-400">
+                                데이터 수집 중
+                              </span>
+                              {device.sessionId && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-xs font-mono py-0 px-1 h-4"
+                                >
+                                  {device.sessionId.slice(-6)}
+                                </Badge>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              <Square className="h-3 w-3 text-gray-500" />
+                              <span className="text-xs text-muted-foreground">
+                                대기 중
+                              </span>
+                            </>
+                          )}
+                        </div>
+
+                        {/* 연결 정보 */}
+                        <div className="space-y-1.5 text-xs">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1 text-muted-foreground">
+                              <Clock className="h-3 w-3" />
+                              <span>연결</span>
+                            </div>
+                            <span className="font-mono">
+                              {formatTime(device.connectedAt)}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1 text-muted-foreground">
+                              <Activity className="h-3 w-3" />
+                              <span>메시지</span>
+                            </div>
+                            <span className="font-mono text-green-600">
+                              {device.messageCount.toLocaleString()}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1 text-muted-foreground">
+                              <Wifi className="h-3 w-3" />
+                              <span>활동</span>
+                            </div>
+                            <span className="font-mono">
+                              {device.lastActivity
+                                ? formatTime(device.lastActivity)
+                                : "-"}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* 상태 표시 */}
+                        <div className="flex items-center justify-between pt-2 border-t">
+                          <div className="flex items-center gap-1.5">
+                            <div
+                              className={`h-1.5 w-1.5 rounded-full ${
+                                device.status === "connected"
+                                  ? "bg-green-500 animate-pulse"
+                                  : "bg-gray-400"
+                              }`}
+                            />
+                            <span className="text-xs font-medium">
+                              {device.status === "connected"
+                                ? "온라인"
+                                : "오프라인"}
+                            </span>
+                          </div>
+
+                          {device.hasActiveSession && (
+                            <div className="flex items-center gap-1">
+                              <div className="h-1 w-1 bg-green-500 rounded-full animate-pulse" />
+                              <span className="text-xs text-green-600">
+                                수집 중
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

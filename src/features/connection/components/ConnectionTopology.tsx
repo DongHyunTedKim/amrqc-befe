@@ -10,6 +10,8 @@ import {
   Smartphone,
   Wifi,
   WifiOff,
+  Play,
+  Square,
 } from "lucide-react";
 
 type DeviceNode = {
@@ -18,6 +20,8 @@ type DeviceNode = {
   status: "connected" | "disconnected";
   connectedAt?: number;
   messageCount?: number;
+  sessionId?: string | null;
+  hasActiveSession?: boolean;
 };
 
 interface ConnectionTopologyProps {
@@ -83,7 +87,7 @@ export function ConnectionTopology({
         details: isConnected
           ? `${(device.messageCount || 0).toLocaleString()} 메시지${
               messageRate > 0 ? ` (${messageRate}/초)` : ""
-            }`
+            }${device.hasActiveSession ? " • 세션 활성" : " • 대기 중"}`
           : "대기 중",
         messageCount: device.messageCount || 0,
         messageRate,
@@ -152,7 +156,7 @@ export function ConnectionTopology({
                 </div>
 
                 {connection.type === "device" && isConnected && (
-                  <div className="flex items-center gap-2 text-right">
+                  <div className="flex items-center gap-3 text-right">
                     <div className="text-xs text-muted-foreground">
                       <div>
                         {connection.messageCount.toLocaleString()} 메시지
@@ -163,7 +167,15 @@ export function ConnectionTopology({
                         </div>
                       )}
                     </div>
-                    <Activity className="h-4 w-4 text-green-600 animate-pulse" />
+                    <div className="flex items-center gap-1">
+                      {devices.find((d) => d.deviceId === connection.name)
+                        ?.hasActiveSession ? (
+                        <Play className="h-3 w-3 text-green-600" />
+                      ) : (
+                        <Square className="h-3 w-3 text-gray-500" />
+                      )}
+                      <Activity className="h-4 w-4 text-green-600 animate-pulse" />
+                    </div>
                   </div>
                 )}
 

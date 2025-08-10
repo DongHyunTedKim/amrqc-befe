@@ -92,7 +92,7 @@ const Toast = React.forwardRef<
       {isVisible && duration > 0 && (
         <div className="absolute bottom-0 left-0 right-0 h-1 bg-gray-200 dark:bg-gray-700 overflow-hidden rounded-b-md">
           <div
-            className="h-full bg-gradient-to-r from-blue-500 to-blue-600 transition-all duration-100 ease-linear"
+            className="h-full bg-gray-800 dark:bg-white transition-all duration-100 ease-linear"
             style={{ width: `${progress}%` }}
           />
         </div>

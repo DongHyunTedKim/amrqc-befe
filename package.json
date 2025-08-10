@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "next lint",
     "server": "node server/index.js",
-    "server:dev": "NODE_ENV=development node server/index.js"
+    "server:dev": "NODE_ENV=development node server/index.js",
+    "test:session": "node test-session-client.js",
+    "test:mock": "node test-client.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^4",

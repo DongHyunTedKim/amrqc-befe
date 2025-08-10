@@ -6,6 +6,8 @@ interface ConnectedDevice {
   connectedAt: number;
   messageCount: number;
   lastActivity: number;
+  sessionId?: string | null;
+  hasActiveSession: boolean;
   status: "connected" | "disconnected";
 }
 

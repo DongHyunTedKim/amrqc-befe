@@ -162,6 +162,14 @@ class WebSocketServer {
           this.handleDeviceRegister(client, message);
           break;
 
+        case "session_start":
+          this.handleSessionStart(client, message);
+          break;
+
+        case "session_end":
+          this.handleSessionEnd(client, message);
+          break;
+
         case "device_unregister":
         case "device_disconnect":
           this.handleDeviceUnregister(client, message);
@@ -215,21 +223,15 @@ class WebSocketServer {
       // 디바이스 ID 설정 (첫 메시지에서)
       if (!client.deviceId && message.deviceId) {
         client.deviceId = message.deviceId;
+        logger.info(
+          `Device ID set from sensor data for client ${client.id}: ${message.deviceId}`
+        );
 
-        // 세션도 함께 생성
-        if (!client.sessionId) {
-          const sessionResult = this.db.getOrCreateActiveSession(
-            message.deviceId
-          );
-          if (sessionResult.success) {
-            client.sessionId = sessionResult.sessionId;
-            logger.info(
-              `Device ID and session registered for client ${client.id}: ${message.deviceId} (session: ${sessionResult.sessionId})`
-            );
-          }
-        } else {
-          logger.info(
-            `Device ID registered for client ${client.id}: ${message.deviceId}`
+        // 하위 호환성: 구버전 클라이언트는 세션 없이도 데이터 전송 가능
+        // 신버전 클라이언트는 session_start를 사용해야 함
+        if (!client.sessionId && !message.sessionId) {
+          logger.warn(
+            `Sensor data received without session from device ${message.deviceId}. Consider using session_start for better data organization.`
           );
         }
       }
@@ -287,28 +289,14 @@ class WebSocketServer {
 
       client.deviceId = message.deviceId;
 
-      // 세션 생성 또는 기존 활성 세션 사용
-      const sessionResult = this.db.getOrCreateActiveSession(message.deviceId);
-      if (sessionResult.success) {
-        client.sessionId = sessionResult.sessionId;
-        logger.info(
-          `✅ Device registered: ${message.deviceId} for client ${
-            client.id
-          } with session ${sessionResult.sessionId} (${
-            sessionResult.isNew ? "new" : "existing"
-          })`
-        );
-      } else {
-        logger.error(
-          `Failed to create session for device ${message.deviceId}:`,
-          sessionResult.error
-        );
-      }
+      logger.info(
+        `✅ Device registered: ${message.deviceId} for client ${client.id}`
+      );
 
+      // sessionId를 포함하지 않음 (신버전 클라이언트는 무시함)
       this.sendMessage(client.ws, {
         type: "device_registered",
         deviceId: message.deviceId,
-        sessionId: client.sessionId,
         timestamp: Date.now(),
       });
     } else {
@@ -322,6 +310,123 @@ class WebSocketServer {
         "INVALID_DEVICE_ID",
         "Device ID must be a non-empty string"
       );
+    }
+  }
+
+  handleSessionStart(client, message) {
+    try {
+      const deviceId = message.deviceId || client.deviceId;
+
+      if (!deviceId) {
+        this.sendError(
+          client.ws,
+          "NO_DEVICE_ID",
+          "Device must be registered before starting a session"
+        );
+        return;
+      }
+
+      // 차단된 디바이스 확인
+      if (this.isDeviceBlocked(deviceId)) {
+        this.sendError(
+          client.ws,
+          "DEVICE_BLOCKED",
+          "This device is temporarily blocked by administrator"
+        );
+        return;
+      }
+
+      // 기존 활성 세션이 있으면 종료
+      const activeSession = this.db.statements.getActiveSession?.get(deviceId);
+      if (activeSession) {
+        logger.info(
+          `🔄 Ending existing session ${activeSession.sessionId} for device ${deviceId} (replaced)`
+        );
+        // 세션을 'replaced' 상태로 변경
+        this.db.db
+          .prepare(
+            "UPDATE Sessions SET endTime = ?, status = 'replaced', updatedAt = ? WHERE sessionId = ?"
+          )
+          .run(Date.now(), Date.now(), activeSession.sessionId);
+      }
+
+      // 새 세션 생성
+      const sessionResult = this.db.createSession(
+        deviceId,
+        `Session started via WebSocket by client ${client.id}`
+      );
+
+      if (sessionResult.success) {
+        client.sessionId = sessionResult.sessionId;
+
+        logger.info(
+          `🟢 Session started: ${sessionResult.sessionId} for device ${deviceId}`
+        );
+
+        // session_created 응답 전송
+        this.sendMessage(client.ws, {
+          type: "session_created",
+          sessionId: sessionResult.sessionId,
+          deviceId: deviceId,
+          timestamp: Date.now(),
+        });
+      } else {
+        logger.error(
+          `Failed to create session for device ${deviceId}:`,
+          sessionResult.error
+        );
+        this.sendError(
+          client.ws,
+          "SESSION_CREATION_FAILED",
+          "Failed to create new session"
+        );
+      }
+    } catch (error) {
+      logger.error("Session start handling failed:", error);
+      this.sendError(
+        client.ws,
+        "SESSION_START_ERROR",
+        "Failed to start session"
+      );
+    }
+  }
+
+  handleSessionEnd(client, message) {
+    try {
+      const deviceId = message.deviceId || client.deviceId;
+      const sessionId = message.sessionId || client.sessionId;
+
+      if (!sessionId) {
+        this.sendError(client.ws, "NO_SESSION_ID", "No active session to end");
+        return;
+      }
+
+      // 세션 종료
+      const result = this.db.endSession(sessionId);
+
+      if (result.success) {
+        client.sessionId = null;
+
+        logger.info(`🔴 Session ended: ${sessionId} for device ${deviceId}`);
+
+        // session_ended 응답 전송 (선택적)
+        this.sendMessage(client.ws, {
+          type: "session_ended",
+          sessionId: sessionId,
+          deviceId: deviceId,
+          timestamp: Date.now(),
+        });
+      } else {
+        logger.error(`Failed to end session ${sessionId}:`, result.error);
+        this.sendError(
+          client.ws,
+          "SESSION_END_FAILED",
+          "Failed to end session"
+        );
+      }
+    } catch (error) {
+      logger.error("Session end handling failed:", error);
+      this.sendError(client.ws, "SESSION_END_ERROR", "Failed to end session");
     }
   }
 
@@ -368,12 +473,29 @@ class WebSocketServer {
     if (client) {
       const duration = Date.now() - client.connectedAt;
 
-      // 세션 종료 처리 (정상 종료인 경우에만)
-      if (client.sessionId && code === 1000) {
-        this.db.endSession(client.sessionId);
-        logger.info(
-          `Session ${client.sessionId} ended for device ${client.deviceId}`
-        );
+      // 세션 종료 처리
+      if (client.sessionId) {
+        if (code === 1000 || code === 1001) {
+          // 정상 종료
+          this.db.endSession(client.sessionId);
+          logger.info(
+            `Session ${client.sessionId} ended normally for device ${client.deviceId}`
+          );
+        } else {
+          // 비정상 종료 - 세션을 'aborted' 상태로 변경
+          try {
+            this.db.db
+              .prepare(
+                "UPDATE Sessions SET endTime = ?, status = 'aborted', updatedAt = ? WHERE sessionId = ?"
+              )
+              .run(Date.now(), Date.now(), client.sessionId);
+            logger.warn(
+              `Session ${client.sessionId} aborted for device ${client.deviceId} (code: ${code})`
+            );
+          } catch (error) {
+            logger.error(`Failed to mark session as aborted:`, error);
+          }
+        }
       }
 
       logger.info(
@@ -474,6 +596,8 @@ class WebSocketServer {
         connectedAt: client.connectedAt,
         messageCount: client.messageCount,
         lastActivity: client.lastPong,
+        sessionId: client.sessionId,
+        hasActiveSession: !!client.sessionId,
         status: "connected",
       }));
   }

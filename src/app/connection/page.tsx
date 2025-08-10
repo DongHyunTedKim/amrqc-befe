@@ -9,7 +9,16 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Copy, Wifi, Smartphone, Activity, X } from "lucide-react";
+import {
+  Copy,
+  Wifi,
+  Smartphone,
+  Activity,
+  X,
+  Play,
+  Square,
+  Clock,
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useServerInfo } from "@/hooks/useServerInfo";
 import { useConnectedDevices } from "@/hooks/useConnectedDevices";
@@ -227,6 +236,8 @@ export default function ConnectionPage() {
             status: d.status,
             connectedAt: d.connectedAt,
             messageCount: d.messageCount,
+            sessionId: d.sessionId,
+            hasActiveSession: d.hasActiveSession,
           }))}
       />
 
@@ -235,61 +246,157 @@ export default function ConnectionPage() {
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
             <span>연결된 스마트폰</span>
-            <Badge variant="secondary">{devices.length}대 연결됨</Badge>
+            <Badge variant="secondary" className="font-semibold">
+              {
+                devices.filter((d) => !d.deviceId?.startsWith("unregistered-"))
+                  .length
+              }
+              대 연결됨
+            </Badge>
           </CardTitle>
           <CardDescription>
             현재 서버에 연결된 스마트폰 목록입니다.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {devices.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <Smartphone className="h-12 w-12 mx-auto mb-3 opacity-50" />
-              <p>연결된 스마트폰이 없습니다.</p>
-              <p className="text-sm mt-1">
+          {devices.filter((d) => !d.deviceId?.startsWith("unregistered-"))
+            .length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <div className="relative mx-auto w-24 h-24 mb-4">
+                <Smartphone className="h-12 w-12 mx-auto opacity-30" />
+                <div className="absolute -top-1 -right-1 w-6 h-6 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center">
+                  <X className="h-3 w-3 text-red-500" />
+                </div>
+              </div>
+              <h3 className="font-medium text-lg mb-2">
+                연결된 스마트폰이 없습니다
+              </h3>
+              <p className="text-sm">
                 스마트폰에서 QR 코드를 스캔하여 연결하세요.
               </p>
             </div>
           ) : (
-            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {devices
                 .filter((d) => !d.deviceId?.startsWith("unregistered-"))
                 .map((device) => (
-                  <Card key={device.id} className="relative">
+                  <Card
+                    key={device.id}
+                    className="relative border-2 hover:border-primary/20 transition-colors"
+                  >
                     <CardContent className="pt-6">
-                      <div className="flex items-start justify-between">
-                        <div className="space-y-1 flex-1">
-                          <div className="flex items-center gap-2">
-                            <Smartphone className="h-4 w-4" />
-                            <span className="font-medium text-sm">
-                              {device.deviceId}
-                            </span>
+                      <div className="space-y-4">
+                        {/* 디바이스 헤더 */}
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-2 flex-1">
+                            <div className="relative">
+                              <Smartphone className="h-5 w-5 text-blue-600" />
+                              <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full animate-pulse" />
+                            </div>
+                            <div>
+                              <h4 className="font-semibold text-sm">
+                                {device.deviceId}
+                              </h4>
+                              <p className="text-xs text-muted-foreground">
+                                Client ID: {device.id.slice(-8)}
+                              </p>
+                            </div>
                           </div>
-                          <p className="text-xs text-muted-foreground">
-                            연결 시간: {formatTime(device.connectedAt)}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            수신 메시지: {device.messageCount.toLocaleString()}
-                            개
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Activity
-                            className={`h-4 w-4 ${
-                              device.status === "connected"
-                                ? "text-green-500"
-                                : "text-gray-400"
-                            }`}
-                          />
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => disconnectDevice(device.deviceId)}
-                            className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                            className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950"
                             title="연결 해제"
                           >
                             <X className="h-4 w-4" />
                           </Button>
+                        </div>
+
+                        {/* 세션 상태 */}
+                        <div className="flex items-center gap-2 p-2 rounded-lg bg-muted/50">
+                          {device.hasActiveSession ? (
+                            <>
+                              <Play className="h-4 w-4 text-green-600" />
+                              <span className="text-sm font-medium text-green-700 dark:text-green-400">
+                                활성 세션
+                              </span>
+                              {device.sessionId && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-xs font-mono"
+                                >
+                                  {device.sessionId.slice(-8)}
+                                </Badge>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              <Square className="h-4 w-4 text-gray-500" />
+                              <span className="text-sm text-muted-foreground">
+                                대기 중
+                              </span>
+                            </>
+                          )}
+                        </div>
+
+                        {/* 연결 정보 */}
+                        <div className="space-y-2 text-xs text-muted-foreground">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              <span>연결 시간</span>
+                            </div>
+                            <span className="font-mono">
+                              {formatTime(device.connectedAt)}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1">
+                              <Activity className="h-3 w-3" />
+                              <span>수신 메시지</span>
+                            </div>
+                            <span className="font-mono">
+                              {device.messageCount.toLocaleString()}개
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1">
+                              <Wifi className="h-3 w-3" />
+                              <span>마지막 활동</span>
+                            </div>
+                            <span className="font-mono">
+                              {device.lastActivity
+                                ? formatTime(device.lastActivity)
+                                : "-"}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* 상태 표시 */}
+                        <div className="flex items-center justify-between pt-2 border-t">
+                          <div className="flex items-center gap-2">
+                            <div
+                              className={`h-2 w-2 rounded-full ${
+                                device.status === "connected"
+                                  ? "bg-green-500 animate-pulse"
+                                  : "bg-gray-400"
+                              }`}
+                            />
+                            <span className="text-xs font-medium">
+                              {device.status === "connected"
+                                ? "연결됨"
+                                : "연결 끊김"}
+                            </span>
+                          </div>
+
+                          {device.hasActiveSession && (
+                            <Badge variant="secondary" className="text-xs">
+                              데이터 수집 중
+                            </Badge>
+                          )}
                         </div>
                       </div>
                     </CardContent>
@@ -297,29 +404,6 @@ export default function ConnectionPage() {
                 ))}
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      {/* 스마트폰과 AMR의 관계 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>스마트폰과 AMR의 관계</CardTitle>
-          <CardDescription>
-            스마트폰이 AMR 장비에 거치되어 센서 데이터를 수집하는 과정입니다.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <ol className="list-decimal list-inside space-y-2 text-sm">
-            <li>스마트폰에서 AMR QC 앱을 실행하고 서버에 연결합니다.</li>
-            <li>테스트할 AMR 장비의 QR 코드를 스캔하여 AMR ID를 식별합니다.</li>
-            <li>
-              스마트폰을 해당 AMR에 거치하면 센서 데이터 수집이 시작됩니다.
-            </li>
-            <li>수집된 데이터는 실시간으로 서버에 전송됩니다.</li>
-            <li>
-              하나의 스마트폰은 여러 AMR을 순차적으로 테스트할 수 있습니다.
-            </li>
-          </ol>
         </CardContent>
       </Card>
 

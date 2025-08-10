@@ -54,8 +54,8 @@ export function Sidebar() {
   return (
     <>
       {/* 데스크톱 사이드바 */}
-      <aside className="hidden w-64 flex-col border-r bg-background md:flex">
-        <nav className="flex-1 space-y-1 p-4">
+      <aside className="hidden w-64 flex-col border-r bg-background md:flex md:fixed md:top-14 md:left-0 md:h-[calc(100vh-3.5rem)] md:z-20">
+        <nav className="flex-1 space-y-1 p-4 overflow-y-auto">
           {sidebarItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href;
