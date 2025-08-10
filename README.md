@@ -27,7 +27,7 @@ amrqc-solution/
 │   ├── src/                 # 소스 코드
 │   │   ├── app/             # App Router
 │   │   ├── components/      # React 컴포넌트
-│   │   │   ├── timeline/    # 타임라인 뷰 컴포넌트
+│   │   │   ├── monitoring/  # 모니터링 뷰 컴포넌트
 │   │   │   ├── qrcode/      # QR 코드 생성
 │   │   │   └── ui/          # shadcn-ui 컴포넌트
 │   │   ├── features/        # 기능별 모듈
@@ -85,7 +85,7 @@ amrqc-solution/
 
 - **책임**: 사용자 인터페이스 제공
 - **주요 기능**:
-  - 타임라인 뷰 (리스트/그래프 모드)
+  - 모니터링 뷰 (리스트/그래프 모드)
   - 디바이스별 데이터 필터링
   - QR 코드 생성 및 표시
   - 데이터 다운로드 기능
@@ -121,7 +121,7 @@ validators.newSensor = (data) => {
 };
 ```
 
-3. **시각화 컴포넌트 추가** (`/client/src/components/timeline/`):
+3. **시각화 컴포넌트 추가** (`/client/src/components/monitoring/`):
 
 ```jsx
 export const NewSensorChart = ({ data }) => {
@@ -133,9 +133,9 @@ export const NewSensorChart = ({ data }) => {
 
 - ✅ WebSocket 기반 실시간 센서 데이터 수신
 - ✅ REST API 데이터 조회 및 다운로드
-- ✅ 타임라인 리스트 뷰
+- ✅ 모니터링 리스트 뷰
 - ✅ **Chart.js 기반 시계열 그래프 뷰** (zoom/pan 지원)
-- ✅ **WebSocket 실시간 업데이트** (타임라인 및 차트)
+- ✅ **WebSocket 실시간 업데이트** (모니터링 및 차트)
 - ✅ 디바이스별 데이터 필터링
 - ✅ Mock 데이터 생성기
 - ✅ 연결 상태 관리 및 자동 재연결
@@ -181,7 +181,7 @@ sequenceDiagram
     W->>B: 메모리 버퍼 저장
     B->>D: 배치 INSERT
     C->>D: 데이터 조회 요청
-    D->>C: 타임라인 데이터 응답
+    D->>C: 모니터링 데이터 응답
 ```
 
 ## 개발 환경 설정

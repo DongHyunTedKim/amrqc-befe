@@ -16,11 +16,11 @@ AMR QC 솔루션은 다음과 같은 도메인 경계로 구분됩니다:
 - **주요 개념**: DeviceId, DeviceStatus, DeviceRegistry
 - **위치**: `/server/routes/device.js`, `/shared/types/device.d.ts`
 
-### 1.3 타임라인 도메인 (Timeline Domain)
+### 1.3 모니터링 도메인 (Monitoring Domain)
 
 - **책임**: 시계열 데이터 조회, 집계, 시각화 지원
 - **주요 개념**: TimeRange, DataPoint, AggregationStrategy
-- **위치**: `/server/routes/timeline.js`, `/client/src/features/timeline/`
+- **위치**: `/server/routes/sensorData.js`, `/client/src/features/monitoring/`
 
 ## 2. Routes 중심 모듈화 전략
 
@@ -31,7 +31,7 @@ server/
 ├── routes/
 │   ├── sensor.js       # 센서 데이터 수신/저장 (WebSocket + REST)
 │   ├── device.js       # 디바이스 관리 API
-│   ├── timeline.js     # 타임라인 조회 API
+│   ├── sensorData.js   # 센서 데이터 조회 API
 │   └── download.js     # 데이터 다운로드 API
 ```
 
