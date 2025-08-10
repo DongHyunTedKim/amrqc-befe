@@ -11,7 +11,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Calendar, Clock, Database, Plus, X } from "lucide-react";
+import { Calendar, Clock, Database, X } from "lucide-react";
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
 
@@ -29,19 +29,16 @@ interface SessionSelectorProps {
   deviceId?: string;
   onSessionSelect: (sessionId: string | null) => void;
   selectedSessionId?: string | null;
-  showCreateButton?: boolean;
 }
 
 export function SessionSelector({
   deviceId,
   onSessionSelect,
   selectedSessionId,
-  showCreateButton = true,
 }: SessionSelectorProps) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
 
   // 세션 목록 조회
   const fetchSessions = async () => {
@@ -74,49 +71,6 @@ export function SessionSelector({
       console.error("세션 목록 조회 오류:", error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  // 새 세션 생성
-  const createSession = async () => {
-    if (!deviceId) return;
-
-    setCreating(true);
-    setError(null);
-
-    try {
-      const response = await fetch("http://localhost:8000/api/sessions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          deviceId,
-          description: `Manual session created at ${new Date().toLocaleString(
-            "ko-KR"
-          )}`,
-        }),
-      });
-
-      if (!response.ok) {
-        const result = await response.json();
-        throw new Error(result.error || `세션 생성 실패: ${response.status}`);
-      }
-
-      const result = await response.json();
-      if (result.success) {
-        // 세션 목록 새로고침
-        await fetchSessions();
-        // 새로 생성된 세션 선택
-        if (result.data?.sessionId) {
-          onSessionSelect(result.data.sessionId);
-        }
-      } else {
-        throw new Error(result.error || "세션 생성 실패");
-      }
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "알 수 없는 오류");
-      console.error("세션 생성 오류:", error);
-    } finally {
-      setCreating(false);
     }
   };
 
@@ -217,7 +171,11 @@ export function SessionSelector({
           <SelectContent>
             {sessions.length === 0 ? (
               <div className="p-2 text-sm text-muted-foreground">
-                세션이 없습니다
+                데이터 수집 세션이 없습니다
+                <br />
+                <span className="text-xs">
+                  스마트폰 앱에서 데이터 수집을 시작하세요
+                </span>
               </div>
             ) : (
               sessions.map((session) => (
@@ -236,26 +194,6 @@ export function SessionSelector({
             )}
           </SelectContent>
         </Select>
-
-        {showCreateButton && (
-          <Button
-            onClick={createSession}
-            disabled={creating || loading}
-            size="sm"
-            variant="outline"
-          >
-            {creating ? (
-              <>
-                <Clock className="h-4 w-4 mr-2 animate-spin" />
-                생성 중...
-              </>
-            ) : (
-              <>
-                <Plus className="h-4 w-4 mr-2" />새 세션
-              </>
-            )}
-          </Button>
-        )}
 
         {selectedSessionId &&
           sessions.find(
