@@ -316,31 +316,19 @@ router.get("/devices", (req, res) => {
  * 센서 데이터를 CSV 파일로 다운로드
  *
  * Query Parameters:
- * - startTs: 시작 시간 (Unix timestamp in ms) - 필수
- * - endTs: 종료 시간 (Unix timestamp in ms) - 필수
- * - deviceId: 디바이스 ID - 필수
+ * - startTs: 시작 시간 (Unix timestamp in ms) - 선택, 기본값: 0 (전체 기간)
+ * - endTs: 종료 시간 (Unix timestamp in ms) - 선택, 기본값: 현재 시각
+ * - deviceId: 디바이스 ID - 선택 (없으면 모든 디바이스 포함)
  */
 router.get("/download", (req, res) => {
   try {
-    // 쿼리 파라미터 파싱
+    // 쿼리 파라미터 파싱 (기본값 허용)
     const { startTs, endTs, deviceId } = req.query;
+    const startTime = startTs ? parseInt(startTs) : 0;
+    const endTime = endTs ? parseInt(endTs) : Date.now();
 
     // 파라미터 검증
     const errors = [];
-
-    if (!startTs) {
-      errors.push("startTs is required");
-    }
-    if (!endTs) {
-      errors.push("endTs is required");
-    }
-    if (!deviceId) {
-      errors.push("deviceId is required");
-    }
-
-    const startTime = parseInt(startTs);
-    const endTime = parseInt(endTs);
-
     if (isNaN(startTime)) {
       errors.push("startTs must be a valid number");
     }
@@ -350,12 +338,8 @@ router.get("/download", (req, res) => {
     if (startTime > endTime) {
       errors.push("startTs must be less than or equal to endTs");
     }
-
     if (errors.length > 0) {
-      return res.status(400).json({
-        success: false,
-        errors,
-      });
+      return res.status(400).json({ success: false, errors });
     }
 
     // 데이터베이스 인스턴스 가져오기
@@ -368,8 +352,8 @@ router.get("/download", (req, res) => {
       });
     }
 
-    // 데이터 조회 쿼리
-    const query = `
+    // 데이터 조회 쿼리 (deviceId가 선택사항)
+    let query = `
       SELECT 
         id,
         deviceId,
@@ -377,17 +361,23 @@ router.get("/download", (req, res) => {
         sensorType,
         valueJson
       FROM SensorData
-      WHERE ts >= ? AND ts <= ? AND deviceId = ?
-      ORDER BY ts ASC
+      WHERE ts >= ? AND ts <= ?
     `;
+    const params = [startTime, endTime];
+    if (deviceId) {
+      query += " AND deviceId = ?";
+      params.push(deviceId);
+    }
+    query += " ORDER BY ts ASC";
 
-    const results = db.db.prepare(query).all(startTime, endTime, deviceId);
+    const results = db.db.prepare(query).all(...params);
 
     // CSV 헤더 설정
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    const filenameDevicePart = deviceId ? deviceId : "all-devices";
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="sensor-data-${deviceId}-${Date.now()}.csv"`
+      `attachment; filename="sensor-data-${filenameDevicePart}-${Date.now()}.csv"`
     );
 
     // CSV 헤더 작성
