@@ -47,7 +47,7 @@ interface DatabaseStatus {
 }
 
 interface DatabaseSettings {
-  retentionDays: number;
+  retentionDays: number | null; // null = 무기한
   autoCleanup: boolean;
   compressionEnabled: boolean;
 }
@@ -64,11 +64,27 @@ export default function DatabasePage() {
   const [databaseStatus, setDatabaseStatus] = useState<DatabaseStatus | null>(
     null
   );
-  const [databaseSettings, setDatabaseSettings] = useState<DatabaseSettings>({
-    retentionDays: 30,
-    autoCleanup: true,
-    compressionEnabled: false,
-  });
+  const [databaseSettings, setDatabaseSettings] = useState<DatabaseSettings>(
+    () => {
+      // 로컬 저장소에서 복원 (즉시 적용 요구사항 반영)
+      try {
+        const raw = localStorage.getItem("db.settings");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          return {
+            retentionDays: parsed.retentionDays ?? null,
+            autoCleanup: parsed.autoCleanup ?? true,
+            compressionEnabled: parsed.compressionEnabled ?? false,
+          } as DatabaseSettings;
+        }
+      } catch {}
+      return {
+        retentionDays: null, // 기본값: 무기한
+        autoCleanup: true,
+        compressionEnabled: false,
+      } as DatabaseSettings;
+    }
+  );
   const [loadingStatus, setLoadingStatus] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -167,6 +183,7 @@ export default function DatabasePage() {
   const handleExportData = async () => {
     setExporting(true);
     try {
+      // 파라미터 없이 전체 기간, 전체 디바이스 다운로드 지원 (서버 수정 반영)
       const response = await fetch("http://localhost:8000/api/data/download", {
         method: "GET",
       });
@@ -201,28 +218,12 @@ export default function DatabasePage() {
     }
   };
 
-  // 설정 저장
-  const handleSaveSettings = async () => {
-    setSavingSettings(true);
+  // 즉시 적용 저장: 사용자가 값을 변경하면 바로 로컬 저장소에 반영
+  useEffect(() => {
     try {
-      // API 호출은 실제 구현 시 추가
-      await new Promise((resolve) => setTimeout(resolve, 1000)); // 임시 딜레이
-
-      toast({
-        title: "설정 저장 완료",
-        description: "데이터베이스 설정이 저장되었습니다.",
-      });
-    } catch (error) {
-      console.error("Error saving settings:", error);
-      toast({
-        title: "오류",
-        description: "설정 저장에 실패했습니다.",
-        variant: "destructive",
-      });
-    } finally {
-      setSavingSettings(false);
-    }
-  };
+      localStorage.setItem("db.settings", JSON.stringify(databaseSettings));
+    } catch {}
+  }, [databaseSettings]);
 
   return (
     <div className="space-y-6">
@@ -320,49 +321,45 @@ export default function DatabasePage() {
             저장된 센서 데이터 관리 및 정리 설정입니다.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="retention-days">데이터 보관 기간 (일)</Label>
-              <Input
-                id="retention-days"
-                type="number"
-                min="1"
-                max="365"
-                value={databaseSettings.retentionDays}
-                onChange={(e) =>
-                  setDatabaseSettings((prev) => ({
-                    ...prev,
-                    retentionDays: parseInt(e.target.value) || 30,
-                  }))
-                }
-              />
-              <p className="text-xs text-muted-foreground">
-                설정된 기간 이후 데이터는 자동 삭제됩니다.
+        <CardContent className="space-y-6">
+          {/* 데이터 보관 기간 - '데이터 내보내기'와 동일한 좌/우 구성 */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="font-medium">데이터 보관 기간</h4>
+              <p className="text-sm text-muted-foreground">
+                1~30일 또는 무기한으로 보관 기간을 설정합니다. 기본값: 무기한
               </p>
             </div>
-
-            <div className="space-y-2">
-              <Label>현재 데이터베이스 크기</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  value={databaseStatus?.databaseSize || "0 KB"}
-                  readOnly
-                  className="flex-1"
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleRefresh}
-                  disabled={loadingStatus}
-                >
-                  {loadingStatus ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    "새로고침"
-                  )}
-                </Button>
-              </div>
+            <div>
+              <select
+                id="retention-days"
+                className="h-9 rounded-md border px-3 text-sm bg-background"
+                value={
+                  databaseSettings.retentionDays === null
+                    ? "unlimited"
+                    : String(databaseSettings.retentionDays)
+                }
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setDatabaseSettings((prev) => ({
+                    ...prev,
+                    retentionDays:
+                      v === "unlimited"
+                        ? null
+                        : Math.max(1, Math.min(30, parseInt(v) || 1)),
+                  }));
+                }}
+              >
+                {Array.from({ length: 30 }).map((_, i) => {
+                  const day = i + 1;
+                  return (
+                    <option key={day} value={day}>
+                      {day}일
+                    </option>
+                  );
+                })}
+                <option value="unlimited">무기한</option>
+              </select>
             </div>
           </div>
 
@@ -397,27 +394,7 @@ export default function DatabasePage() {
             </div>
           </div>
 
-          <Separator />
-
-          <div className="flex justify-end">
-            <Button
-              onClick={handleSaveSettings}
-              disabled={savingSettings}
-              className="gap-2"
-            >
-              {savingSettings ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  저장 중...
-                </>
-              ) : (
-                <>
-                  <Database className="h-4 w-4" />
-                  설정 저장
-                </>
-              )}
-            </Button>
-          </div>
+          {/* 저장 버튼 제거: 즉시 적용 */}
         </CardContent>
       </Card>
 
