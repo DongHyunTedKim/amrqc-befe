@@ -30,6 +30,7 @@ import {
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
 import { useMonitoringWebSocket } from "@/features/monitoring/hooks/useMonitoringWebSocket";
+import { useMonitoringStore } from "@/features/monitoring/stores/monitoringStore";
 
 // 동적 로딩 컴포넌트
 const MonitoringChart = dynamic(
@@ -80,6 +81,9 @@ export default function SessionDetailPage({ params }: PageProps) {
 
   const [session, setSession] = useState<SessionData | null>(null);
   const [sensorData, setSensorData] = useState<SensorData[]>([]);
+  // 글로벌 스토어
+  const monitoringStore = useMonitoringStore();
+
   const [availableSensors, setAvailableSensors] = useState<string[]>([]);
   const [selectedSensor, setSelectedSensor] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"graph" | "table">("graph");
@@ -144,6 +148,19 @@ export default function SessionDetailPage({ params }: PageProps) {
         if (result.success) {
           setSensorData(result.data || []);
 
+          // 스토어에 히스토리 반영 (센서별)
+          if (Array.isArray(result.data)) {
+            const byType: Record<string, SensorData[]> = {};
+            for (const row of result.data) {
+              const key = row.sensorType;
+              if (!byType[key]) byType[key] = [];
+              byType[key].push(row);
+            }
+            Object.entries(byType).forEach(([type, list]) => {
+              monitoringStore.replaceHistory(sessionId, type, list);
+            });
+          }
+
           // 세션 정보 업데이트
           if (result.session) {
             setSession(result.session);
@@ -155,11 +172,28 @@ export default function SessionDetailPage({ params }: PageProps) {
               result.data.map((d: SensorData) => d.sensorType as string)
             );
             const sortedSensors: string[] = Array.from(sensorTypes).sort();
-            setAvailableSensors(sortedSensors);
 
-            // 첫 번째 센서를 기본 선택
+            // 데이터가 없는 경우 기본 센서 타입 목록 제공
+            const defaultSensors = [
+              "accelerometer",
+              "gyroscope",
+              "gps",
+              "temperature",
+              "battery",
+              "magnetometer",
+              "microphone",
+            ];
+
+            const finalSensors =
+              sortedSensors.length > 0 ? sortedSensors : defaultSensors;
+            setAvailableSensors(finalSensors);
+
+            // 첫 번째 센서를 기본 선택 (데이터가 있는 경우에만)
             if (sortedSensors.length > 0 && !selectedSensor) {
               setSelectedSensor(sortedSensors[0] as string);
+            } else if (sortedSensors.length === 0) {
+              // 데이터가 없는 경우 선택 해제
+              setSelectedSensor(null);
             }
           }
         }
@@ -179,9 +213,6 @@ export default function SessionDetailPage({ params }: PageProps) {
       // 현재 세션의 데이터만 처리 (sessionId가 있는 경우에만 체크)
       if (newData.sessionId && newData.sessionId !== sessionId) return;
 
-      // 선택된 센서 타입과 일치하는 경우만 추가
-      if (selectedSensor && newData.sensorType !== selectedSensor) return;
-
       setSensorData((prev) => {
         // 중복 방지
         const exists = prev.some(
@@ -196,8 +227,12 @@ export default function SessionDetailPage({ params }: PageProps) {
         const dataWithSession = { ...newData, sessionId };
         return [dataWithSession, ...prev].slice(0, 1000);
       });
+
+      // 스토어에도 추가 (세션 유지)
+      const dataWithSession = { ...newData, sessionId } as SensorData;
+      monitoringStore.appendLive(sessionId, dataWithSession);
     },
-    [sessionId, selectedSensor]
+    [sessionId]
   );
 
   // WebSocket 연결
@@ -214,18 +249,22 @@ export default function SessionDetailPage({ params }: PageProps) {
     },
   });
 
-  // CSV 다운로드 (Wide 포맷)
+  // CSV 다운로드 (세션별 전용 API 사용)
   const handleDownload = async () => {
     setDownloading(true);
     setError(null);
 
     try {
       const params = new URLSearchParams();
-      params.append("sessionId", sessionId);
 
-      // 기본 다운로드 API 사용 (추후 wide 포맷 지원 추가)
+      // 선택된 센서가 있으면 해당 센서만 다운로드
+      if (selectedSensor) {
+        params.append("sensorType", selectedSensor);
+      }
+      params.append("format", "csv");
+
       const response = await fetch(
-        `${API_BASE}/data/download?deviceId=${session?.deviceId}`
+        `${API_BASE}/sessions/${sessionId}/download?${params}`
       );
 
       if (!response.ok) {
@@ -237,9 +276,17 @@ export default function SessionDetailPage({ params }: PageProps) {
       const a = document.createElement("a");
       a.style.display = "none";
       a.href = url;
-      a.download = `amr-${session?.deviceId}-session-${
-        sessionId.split("-").slice(-1)[0]
-      }-${format(new Date(), "yyyyMMdd")}.csv`;
+
+      // 파일명 생성 (센서 타입 포함)
+      const sensorSuffix = selectedSensor ? `-${selectedSensor}` : "";
+      const sessionShortId = sessionId.split("-").slice(-1)[0];
+      a.download = `session-${
+        session?.deviceId
+      }-${sessionShortId}${sensorSuffix}-${format(
+        new Date(),
+        "yyyyMMdd-HHmmss"
+      )}.csv`;
+
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -303,9 +350,9 @@ export default function SessionDetailPage({ params }: PageProps) {
 
   // 필터링된 센서 데이터
   const filteredSensorData = useMemo(() => {
-    if (!selectedSensor) return sensorData;
-    return sensorData.filter((d) => d.sensorType === selectedSensor);
-  }, [sensorData, selectedSensor]);
+    // 스토어에서 세션 전체 + 선택 센서 기준으로 조회 (페이지 이동 후에도 유지)
+    return monitoringStore.getData(sessionId, selectedSensor || undefined);
+  }, [monitoringStore, sessionId, selectedSensor, sensorData]);
 
   // 세션 상태 배지
   const getStatusBadge = (status: string) => {
@@ -399,12 +446,6 @@ export default function SessionDetailPage({ params }: PageProps) {
                   </p>
                 </div>
               )}
-              <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">데이터 수</p>
-                <p className="font-medium">
-                  {session.dataCount || filteredSensorData.length} 건
-                </p>
-              </div>
             </div>
           </CardContent>
         </Card>
@@ -430,21 +471,45 @@ export default function SessionDetailPage({ params }: PageProps) {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium">센서 선택:</span>
-                <div className="flex gap-1 p-1 bg-muted rounded-lg">
-                  {availableSensors.map((sensor) => (
-                    <Button
-                      key={sensor}
-                      variant={selectedSensor === sensor ? "default" : "ghost"}
-                      size="sm"
-                      onClick={() => setSelectedSensor(sensor)}
-                      className="gap-2"
-                    >
-                      <Badge className={`${getSensorColor(sensor)} border-0`}>
-                        {sensor}
-                      </Badge>
-                    </Button>
-                  ))}
-                </div>
+                {availableSensors.length > 0 ? (
+                  <div className="flex gap-1 p-1 bg-muted rounded-lg">
+                    {availableSensors.map((sensor) => {
+                      // 실제 데이터가 있는 센서인지 확인
+                      const hasData = sensorData.some(
+                        (d) => d.sensorType === sensor
+                      );
+                      return (
+                        <Button
+                          key={sensor}
+                          variant={
+                            selectedSensor === sensor ? "default" : "ghost"
+                          }
+                          size="sm"
+                          onClick={() => setSelectedSensor(sensor)}
+                          className={`gap-2 ${!hasData ? "opacity-60" : ""}`}
+                          title={
+                            hasData
+                              ? `${sensor} 센서 데이터 보기`
+                              : `${sensor} 센서 데이터 없음`
+                          }
+                        >
+                          <Badge
+                            className={`${getSensorColor(sensor)} border-0`}
+                          >
+                            {sensor}
+                          </Badge>
+                        </Button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <span className="text-sm">
+                      센서 데이터를 불러오는 중...
+                    </span>
+                    {loading && <RefreshCw className="h-4 w-4 animate-spin" />}
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center gap-2">
@@ -542,7 +607,9 @@ export default function SessionDetailPage({ params }: PageProps) {
           <CardDescription>
             {loading
               ? "데이터 로딩 중..."
-              : `${filteredSensorData.length}개 데이터 포인트`}
+              : selectedSensor
+              ? `${filteredSensorData.length}개 데이터 포인트`
+              : "센서를 선택하여 데이터를 확인하세요"}
             {wsConnected &&
               realtimeEnabled &&
               session?.status === "active" &&
@@ -553,6 +620,21 @@ export default function SessionDetailPage({ params }: PageProps) {
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : !selectedSensor ? (
+            <div className="h-[400px] flex items-center justify-center bg-gray-50 dark:bg-gray-900 rounded-lg">
+              <div className="text-center text-muted-foreground">
+                <Activity className="h-12 w-12 mx-auto mb-4" />
+                <p className="text-lg mb-2">센서를 선택해주세요</p>
+                <p className="text-sm">
+                  위의 센서 목록에서 보고 싶은 센서를 클릭하세요.
+                </p>
+                {sensorData.length === 0 && (
+                  <p className="text-xs mt-2 text-orange-600">
+                    현재 이 세션에는 수집된 센서 데이터가 없습니다.
+                  </p>
+                )}
+              </div>
             </div>
           ) : viewMode === "graph" ? (
             <div>
@@ -567,8 +649,20 @@ export default function SessionDetailPage({ params }: PageProps) {
               ) : (
                 <div className="h-[400px] flex items-center justify-center bg-gray-50 dark:bg-gray-900 rounded-lg">
                   <div className="text-center text-muted-foreground">
-                    <p className="text-lg mb-2">데이터가 없습니다</p>
-                    <p className="text-sm">선택한 센서의 데이터가 없습니다.</p>
+                    <BarChart3 className="h-12 w-12 mx-auto mb-4" />
+                    <p className="text-lg mb-2">
+                      {selectedSensor} 센서 데이터가 없습니다
+                    </p>
+                    <p className="text-sm">
+                      이 세션에서는 {selectedSensor} 센서의 데이터가 수집되지
+                      않았습니다.
+                    </p>
+                    {session?.status === "active" && (
+                      <p className="text-xs mt-2 text-blue-600">
+                        실시간 데이터 수집이 활성화되어 있습니다. 데이터가
+                        들어오면 자동으로 표시됩니다.
+                      </p>
+                    )}
                   </div>
                 </div>
               )}
@@ -609,7 +703,19 @@ export default function SessionDetailPage({ params }: PageProps) {
               ) : (
                 <div className="text-center py-12 text-muted-foreground">
                   <Table2 className="h-12 w-12 mx-auto mb-4" />
-                  <p>표시할 데이터가 없습니다</p>
+                  <p className="text-lg mb-2">
+                    {selectedSensor} 센서 데이터가 없습니다
+                  </p>
+                  <p className="text-sm">
+                    이 세션에서는 {selectedSensor} 센서의 데이터가 수집되지
+                    않았습니다.
+                  </p>
+                  {session?.status === "active" && (
+                    <p className="text-xs mt-2 text-blue-600">
+                      실시간 데이터 수집이 활성화되어 있습니다. 데이터가
+                      들어오면 자동으로 표시됩니다.
+                    </p>
+                  )}
                 </div>
               )}
             </div>

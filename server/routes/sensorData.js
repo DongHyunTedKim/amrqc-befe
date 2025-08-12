@@ -380,15 +380,21 @@ router.get("/download", (req, res) => {
       `attachment; filename="sensor-data-${filenameDevicePart}-${Date.now()}.csv"`
     );
 
-    // CSV 헤더 작성
-    res.write("id,deviceId,ts,sensorType,valueJson\n");
+    // CSV 헤더 작성 (timestamp_unix와 timestamp_iso 컬럼 추가)
+    res.write(
+      "id,deviceId,timestamp_unix,timestamp_iso,sensorType,valueJson\n"
+    );
 
     // 데이터 행 작성
     for (const row of results) {
       // CSV 특수 문자 이스케이프 처리
       const escapedValueJson = row.valueJson.replace(/"/g, '""');
+
+      // Unix timestamp를 ISO 8601 형식으로 변환
+      const isoDate = new Date(row.ts).toISOString();
+
       res.write(
-        `${row.id},"${row.deviceId}",${row.ts},"${row.sensorType}","${escapedValueJson}"\n`
+        `${row.id},"${row.deviceId}",${row.ts},"${isoDate}","${row.sensorType}","${escapedValueJson}"\n`
       );
     }
 

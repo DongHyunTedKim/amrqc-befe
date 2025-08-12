@@ -56,6 +56,8 @@ export default function MonitoringPage() {
   const [selectedDevice, setSelectedDevice] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({});
+  const [deleting, setDeleting] = useState(false);
 
   // API 기본 URL
   const API_BASE = "http://localhost:8000/api";
@@ -106,6 +108,45 @@ export default function MonitoringPage() {
   // 새로고침 핸들러
   const handleRefresh = () => {
     fetchSessions();
+  };
+
+  // 선택 토글
+  const toggleSelect = (sessionId: string) => {
+    setSelectedIds((prev) => ({ ...prev, [sessionId]: !prev[sessionId] }));
+  };
+
+  const clearSelection = () => setSelectedIds({});
+
+  const selectedCount = useMemo(
+    () => Object.values(selectedIds).filter(Boolean).length,
+    [selectedIds]
+  );
+
+  // 삭제 API
+  const deleteSelected = async () => {
+    const ids = Object.entries(selectedIds)
+      .filter(([, v]) => v)
+      .map(([k]) => k);
+    if (ids.length === 0) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`${API_BASE}/sessions/delete-batch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionIds: ids }),
+      });
+      if (!res.ok) {
+        const msg = await res.text();
+        throw new Error(msg || `삭제 실패: ${res.status}`);
+      }
+      clearSelection();
+      await fetchSessions();
+    } catch (e) {
+      console.error("세션 삭제 실패", e);
+      alert(e instanceof Error ? e.message : "세션 삭제 실패");
+    } finally {
+      setDeleting(false);
+    }
   };
 
   // 세션 카드 클릭 핸들러
@@ -268,6 +309,37 @@ export default function MonitoringPage() {
                   className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
                 />
               </Button>
+
+              {/* 선택/삭제 컨트롤 */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">
+                  선택됨: {selectedCount}개
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setSelectedIds(
+                      Object.fromEntries(
+                        filteredSessions.map((s) => [s.sessionId, true])
+                      )
+                    )
+                  }
+                >
+                  전체 선택
+                </Button>
+                <Button variant="outline" size="sm" onClick={clearSelection}>
+                  선택 해제
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={deleting || selectedCount === 0}
+                  onClick={() => deleteSelected()}
+                >
+                  선택 삭제
+                </Button>
+              </div>
             </div>
           </div>
         </CardContent>
@@ -301,13 +373,25 @@ export default function MonitoringPage() {
               <Card
                 key={session.sessionId}
                 className="hover:shadow-lg transition-shadow cursor-pointer group"
-                onClick={() => handleSessionClick(session.sessionId)}
+                onClick={(e) => {
+                  // 카드 내부 체크박스 클릭은 전파 차단
+                  if ((e.target as HTMLElement).closest("input[type=checkbox]"))
+                    return;
+                  handleSessionClick(session.sessionId);
+                }}
               >
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
                     <div className="space-y-1">
                       <CardTitle className="text-base flex items-center gap-2">
-                        <Smartphone className="h-4 w-4 text-blue-600" />
+                        <input
+                          type="checkbox"
+                          className="accent-black"
+                          checked={!!selectedIds[session.sessionId]}
+                          onChange={() => toggleSelect(session.sessionId)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+
                         <span>{session.deviceId}</span>
                         {isSampleDevice(session.deviceId) && (
                           <Badge

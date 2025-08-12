@@ -20,7 +20,7 @@ interface SensorData {
   timestamp: number;
   sensorType: string;
   value: any;
-  createdAt: string;
+  createdAt?: string;
 }
 
 interface MonitoringChartProps {
@@ -66,50 +66,80 @@ export function MonitoringChart({
     // 유니크한 타임스탬프 추출
     const timestamps = [...new Set(sortedData.map((d) => d.timestamp))].sort();
 
+    // 축별 기본 색상 정의 (x: 빨강, y: 초록, z: 파랑)
+    const AXIS_COLORS: Record<string, string> = {
+      x: "rgb(239, 68, 68)", // red
+      y: "rgb(34, 197, 94)", // green
+      z: "rgb(59, 130, 246)", // blue
+    };
+
     // 센서 타입별 데이터셋 생성
-    const datasets = sensorTypes.map((sensorType) => {
+    const datasets = sensorTypes.flatMap((sensorType) => {
       const sensorData = sortedData.filter((d) => d.sensorType === sensorType);
 
-      // 타임스탬프별 값 매핑
+      // 3축 센서: 각 축(x,y,z)을 개별 시리즈로 생성
+      if (
+        sensorType === "accelerometer" ||
+        sensorType === "gyroscope" ||
+        sensorType === "magnetometer"
+      ) {
+        const axes: Array<"x" | "y" | "z"> = ["x", "y", "z"];
+        return axes.map((axis) => {
+          const values = timestamps.map((ts) => {
+            const item = sensorData.find((d) => d.timestamp === ts);
+            if (!item) return null;
+            const v = item.value?.[axis];
+            return typeof v === "number" ? v : null;
+          });
+
+          return {
+            label: `${sensorType}.${axis}`,
+            data: values,
+            borderColor: AXIS_COLORS[axis],
+            backgroundColor: AXIS_COLORS[axis] + "20",
+            borderWidth: 2,
+            fill: false,
+            tension: 0.1,
+            pointRadius: 2,
+            pointHoverRadius: 5,
+            spanGaps: true,
+          } as const;
+        });
+      }
+
+      // 기타 단일값 센서 처리
       const values = timestamps.map((ts) => {
         const item = sensorData.find((d) => d.timestamp === ts);
         if (!item) return null;
-
-        // 센서 타입별 값 추출
         switch (sensorType) {
-          case "accelerometer":
-          case "gyroscope":
-          case "magnetometer":
-            // 3축 센서의 경우 크기(magnitude) 계산
-            const { x = 0, y = 0, z = 0 } = item.value;
-            return Math.sqrt(x * x + y * y + z * z);
           case "temperature":
-            return item.value.celsius || item.value.value || 0;
+            return item.value?.celsius ?? item.value?.value ?? null;
           case "battery":
-            return item.value.level || 0;
+            return item.value?.level ?? null;
           case "microphone":
-            return item.value.decibel || 0;
+            return item.value?.decibel ?? null;
           case "gps":
-            // GPS는 속도나 고도 등을 표시할 수 있음
-            return item.value.speed || 0;
+            return item.value?.speed ?? null;
           default:
-            return typeof item.value === "number" ? item.value : 0;
+            return typeof item.value === "number" ? item.value : null;
         }
       });
 
-      return {
-        label: sensorType,
-        data: values,
-        borderColor: SENSOR_COLORS[sensorType] || "rgb(156, 163, 175)",
-        backgroundColor:
-          (SENSOR_COLORS[sensorType] || "rgb(156, 163, 175)") + "20",
-        borderWidth: 2,
-        fill: false,
-        tension: 0.1,
-        pointRadius: 2,
-        pointHoverRadius: 5,
-        spanGaps: true, // null 값을 건너뛰고 선 연결
-      };
+      return [
+        {
+          label: sensorType,
+          data: values,
+          borderColor: SENSOR_COLORS[sensorType] || "rgb(156, 163, 175)",
+          backgroundColor:
+            (SENSOR_COLORS[sensorType] || "rgb(156, 163, 175)") + "20",
+          borderWidth: 2,
+          fill: false,
+          tension: 0.1,
+          pointRadius: 2,
+          pointHoverRadius: 5,
+          spanGaps: true,
+        },
+      ];
     });
 
     return {
@@ -164,11 +194,12 @@ export function MonitoringChart({
               },
               label: (context: TooltipItem<"line">) => {
                 const label = context.dataset.label || "";
+                const sensorTypeLabel = (label as string).split(".")[0];
                 const value = context.parsed.y;
 
                 // 센서 타입별 단위 추가
                 let unit = "";
-                switch (label) {
+                switch (sensorTypeLabel) {
                   case "accelerometer":
                   case "gyroscope":
                   case "magnetometer":
